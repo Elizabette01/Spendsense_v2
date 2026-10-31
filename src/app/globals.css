@@ -1,26 +1,104 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Dark mode switches on a .dark class (for the sidebar Theme toggle) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------- Fixed design tokens ---------- */
+@theme {
+  /* Brand greens */
+  --color-brand-50: #e6f4ed;
+  --color-brand-100: #d0ebdd;
+  --color-brand-200: #b8e0c8;
+  --color-brand-300: #7bc89a;
+  --color-brand-400: #48a872;
+  --color-brand-500: #2d8659;
+  --color-brand-600: #1a7a4c;
+  --color-brand-800: #0d4a2e;
+
+  /* Accent */
+  --color-coral: #d4764e;
+  --color-coral-light: #fdf0ec;
+  --color-coral-strong: #a8502c;
+
+  /* Type scale (from the screens) */
+  --text-hero: 2.625rem;        --text-hero--font-weight: 500;      /* 42px */
+  --text-page-title: 1.5rem;    --text-page-title--font-weight: 700; /* 24px */
+  --text-stat: 1.375rem;        --text-stat--font-weight: 600;       /* 22px */
+  --text-card-title: 0.9375rem; --text-card-title--font-weight: 600; /* 15px */
+  --text-nav: 0.875rem;                                              /* 14px */
+  --text-body: 0.8125rem;                                            /* 13px */
+  --text-label: 0.75rem;                                             /* 12px */
+  --text-caption: 0.6875rem;                                         /* 11px */
+  --text-overline: 0.625rem;    --text-overline--font-weight: 500;   /* 10px */
+
+  /* Shape */
+  --radius-card: 12px;
+  --radius-control: 8px;
+  --radius-icon: 6px;
+  --shadow-card: 0 2px 8px 0 rgb(0 0 0 / 0.06);
 }
 
+/* ---------- Semantic colours: light (from Figma) ---------- */
+:root {
+  --background: #f5f7f6;
+  --foreground: #1a1a1a;
+  --heading: #0d4a2e;
+  --foreground-secondary: #555555;
+  --foreground-muted: #717171;
+  --foreground-subtle: #8c8c8c; 
+  --card: #ffffff;
+  --sidebar: #ffffff;
+  --border: #e8edeb;
+  --divider: #e6f4ed;
+  --primary: #1a7a4c;
+  --primary-foreground: #ffffff;
+  --accent: #e6f4ed;
+  --accent-foreground: #1a7a4c;
+  --positive: #1a7a4c;
+  --destructive: #c0392b;
+}
+
+/* ---------- Semantic colours: dark ---------- */
+.dark {
+  --background: #1a1a1a;
+  --card: #2a2a2a;
+  --sidebar: #071210;
+  --border: #333333;
+  --divider: #333333;
+  --foreground: #f5f7f6;
+  --heading: #e6f4ed;
+  --foreground-secondary: #c4ccc8;
+  --foreground-muted: #a3aca8;
+  --foreground-subtle: #7d8682;
+  --accent: #0d4a2e;
+  --accent-foreground: #7bc89a;
+  --positive: #7bc89a;
+  --destructive: #f08a7e;
+}
+
+/* ---------- Expose semantic colours + font to Tailwind ---------- */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-heading: var(--heading);
+  --color-foreground-secondary: var(--foreground-secondary);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-foreground-subtle: var(--foreground-subtle);
+  --color-card: var(--card);
+  --color-sidebar: var(--sidebar);
+  --color-border: var(--border);
+  --color-divider: var(--divider);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-positive: var(--positive);
+  --color-destructive: var(--destructive);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
 }
