@@ -18,6 +18,7 @@
   /* Accent */
   --color-coral: #d4764e;
   --color-coral-light: #fdf0ec;
+  --color-coral-strong: #a8502c;
 
   /* Type scale (from the screens) */
   --text-hero: 2.625rem;        --text-hero--font-weight: 500;      /* 42px */
@@ -43,8 +44,8 @@
   --foreground: #1a1a1a;
   --heading: #0d4a2e;
   --foreground-secondary: #555555;
-  --foreground-muted: #888888;
-  --foreground-subtle: #aaaaaa;
+  --foreground-muted: #717171;
+  --foreground-subtle: #8c8c8c; 
   --card: #ffffff;
   --sidebar: #ffffff;
   --border: #e8edeb;
@@ -53,18 +54,17 @@
   --primary-foreground: #ffffff;
   --accent: #e6f4ed;
   --accent-foreground: #1a7a4c;
+  --positive: #1a7a4c;
   --destructive: #c0392b;
 }
 
 /* ---------- Semantic colours: dark ---------- */
 .dark {
-  /* Surfaces: from Figma */
   --background: #1a1a1a;
   --card: #2a2a2a;
   --sidebar: #071210;
   --border: #333333;
   --divider: #333333;
-  /* Text and accents: proposed (not designed in Figma yet) */
   --foreground: #f5f7f6;
   --heading: #e6f4ed;
   --foreground-secondary: #c4ccc8;
@@ -72,6 +72,8 @@
   --foreground-subtle: #7d8682;
   --accent: #0d4a2e;
   --accent-foreground: #7bc89a;
+  --positive: #7bc89a;
+  --destructive: #f08a7e;
 }
 
 /* ---------- Expose semantic colours + font to Tailwind ---------- */
@@ -90,6 +92,7 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-positive: var(--positive);
   --color-destructive: var(--destructive);
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
