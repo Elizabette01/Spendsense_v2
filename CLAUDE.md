@@ -1,6 +1,6 @@
 @AGENTS.md
 
-# CLAUDE.md: SpendSense
+# CLAUDE.md: Spendsense
 
 Instructions for Claude Code working in this repository. Read this fully before making changes.
 
