@@ -19,6 +19,35 @@ enum Role {
   @@map("role")
 }
 
+enum CategoryType {
+  INCOME
+  EXPENSE
+
+  @@map("category_type")
+}
+
+enum FileType {
+  CSV
+  PDF
+
+  @@map("file_type")
+}
+
+enum StatementStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+
+  @@map("statement_status")
+}
+
+enum CategorisedBy {
+  AI
+  USER
+
+  @@map("categorised_by")
+}
+
 model User {
   id            String    @id @default(cuid())
   name          String?
@@ -32,6 +61,9 @@ model User {
 
   accounts Account[]
   sessions Session[]
+  categories   Category[]
+  statements   Statement[]
+  transactions Transaction[]
 
   @@map("users")
 }
@@ -82,4 +114,72 @@ model VerificationToken {
 
   @@unique([identifier, token])
   @@map("verification_tokens")
+}
+
+// Financial based schema
+
+model Category {
+  id        String       @id @default(cuid())
+  userId    String?      @map("user_id")
+  name      String
+  icon      String?
+  colour    String?
+  type      CategoryType
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user         User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@unique([userId, name])
+  @@map("categories")
+}
+
+model Statement {
+  id           String          @id @default(cuid())
+  userId       String          @map("user_id")
+  fileName     String          @map("file_name")
+  fileType     FileType        @map("file_type")
+  bankName     String?         @map("bank_name")
+  periodStart  DateTime?       @map("period_start") @db.Date
+  periodEnd    DateTime?       @map("period_end") @db.Date
+  status       StatementStatus @default(PROCESSING)
+  errorMessage String?         @map("error_message")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([userId])
+  @@map("statements")
+}
+
+model Transaction {
+  id            String         @id @default(cuid())
+  userId        String         @map("user_id")
+  statementId   String         @map("statement_id")
+  categoryId    String?        @map("category_id")
+  date          DateTime       @db.Date
+  description   String
+  merchant      String?
+  amountMinor   Int            @map("amount_minor")
+  currency      String         @default("GBP") @db.Char(3)
+  categorisedBy CategorisedBy? @map("categorised_by")
+  fingerprint   String
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  statement Statement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  category  Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, fingerprint])
+  @@index([userId, date])
+  @@index([statementId])
+  @@index([categoryId])
+  @@map("transactions")
 }
