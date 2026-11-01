@@ -1,0 +1,292 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  USER
+  ADMIN
+
+  @@map("role")
+}
+
+enum CategoryType {
+  INCOME
+  EXPENSE
+
+  @@map("category_type")
+}
+
+enum FileType {
+  CSV
+  PDF
+
+  @@map("file_type")
+}
+
+enum StatementStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+
+  @@map("statement_status")
+}
+
+enum CategorisedBy {
+  AI
+  USER
+
+  @@map("categorised_by")
+}
+
+// Billing and admin enums
+enum Plan {
+  MONTHLY
+  ANNUAL
+
+  @@map("plan")
+}
+
+enum SubscriptionStatus {
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+  PAUSED
+
+  @@map("subscription_status")
+}
+
+enum ActivityType {
+  SIGN_UP
+  ACTIVE_DAY
+  CHAT_MESSAGE
+
+  @@map("activity_type")
+}
+
+enum AuditAction {
+  VIEW_USER_LIST
+  VIEW_ANALYTICS
+  REVEAL_EMAIL
+
+  @@map("audit_action")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime? @map("email_verified")
+  image         String?
+  role          Role      @default(USER)
+  lastActiveAt  DateTime? @map("last_active_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  accounts          Account[]
+  sessions          Session[]
+  categories        Category[]
+  statements        Statement[]
+  transactions      Transaction[]
+  subscription      Subscription?
+  activityEvents    ActivityEvent[]
+  auditLogsAsAdmin  AuditLog[]      @relation("AuditAdmin")
+  auditLogsAsTarget AuditLog[]      @relation("AuditTarget")
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Financial based schema
+
+model Category {
+  id     String       @id @default(cuid())
+  userId String?      @map("user_id")
+  name   String
+  icon   String?
+  colour String?
+  type   CategoryType
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user         User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@unique([userId, name])
+  @@map("categories")
+}
+
+model Statement {
+  id           String          @id @default(cuid())
+  userId       String          @map("user_id")
+  fileName     String          @map("file_name")
+  fileType     FileType        @map("file_type")
+  bankName     String?         @map("bank_name")
+  periodStart  DateTime?       @map("period_start") @db.Date
+  periodEnd    DateTime?       @map("period_end") @db.Date
+  status       StatementStatus @default(PROCESSING)
+  errorMessage String?         @map("error_message")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([userId])
+  @@map("statements")
+}
+
+model Transaction {
+  id            String         @id @default(cuid())
+  userId        String         @map("user_id")
+  statementId   String         @map("statement_id")
+  categoryId    String?        @map("category_id")
+  date          DateTime       @db.Date
+  description   String
+  merchant      String?
+  amountMinor   Int            @map("amount_minor")
+  currency      String         @default("GBP") @db.Char(3)
+  categorisedBy CategorisedBy? @map("categorised_by")
+  fingerprint   String
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  statement Statement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  category  Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, fingerprint])
+  @@index([userId, date])
+  @@index([statementId])
+  @@index([categoryId])
+  @@map("transactions")
+}
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  userId               String             @unique @map("user_id")
+  stripeCustomerId     String             @unique @map("stripe_customer_id")
+  stripeSubscriptionId String             @unique @map("stripe_subscription_id")
+  plan                 Plan
+  status               SubscriptionStatus
+  trialEndsAt          DateTime?          @map("trial_ends_at")
+  trialReminderSentAt  DateTime?          @map("trial_reminder_sent_at")
+  currentPeriodEnd     DateTime           @map("current_period_end")
+  cancelAtPeriodEnd    Boolean            @default(false) @map("cancel_at_period_end")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model StripeEvent {
+  id          String   @id
+  type        String
+  processedAt DateTime @default(now()) @map("processed_at")
+
+  @@map("stripe_events")
+}
+
+model ActivityEvent {
+  id        String       @id @default(cuid())
+  userId    String?      @map("user_id")
+  type      ActivityType
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([type, createdAt])
+  @@index([userId])
+  @@map("activity_events")
+}
+
+model DailyMetric {
+  date  DateTime     @db.Date
+  type  ActivityType
+  count Int
+
+  @@id([date, type])
+  @@map("daily_metrics")
+}
+
+model AuditLog {
+  id           String      @id @default(cuid())
+  adminId      String?     @map("admin_id")
+  targetUserId String?     @map("target_user_id")
+  action       AuditAction
+  createdAt    DateTime    @default(now()) @map("created_at")
+
+  admin      User? @relation("AuditAdmin", fields: [adminId], references: [id], onDelete: SetNull)
+  targetUser User? @relation("AuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([adminId])
+  @@index([targetUserId])
+  @@map("audit_logs")
+}
