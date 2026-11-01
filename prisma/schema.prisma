@@ -48,6 +48,43 @@ enum CategorisedBy {
   @@map("categorised_by")
 }
 
+// Billing and admin enums
+enum Plan {
+  MONTHLY
+  ANNUAL
+
+  @@map("plan")
+}
+
+enum SubscriptionStatus {
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+  PAUSED
+
+  @@map("subscription_status")
+}
+
+enum ActivityType {
+  SIGN_UP
+  ACTIVE_DAY
+  CHAT_MESSAGE
+
+  @@map("activity_type")
+}
+
+enum AuditAction {
+  VIEW_USER_LIST
+  VIEW_ANALYTICS
+  REVEAL_EMAIL
+
+  @@map("audit_action")
+}
+
 model User {
   id            String    @id @default(cuid())
   name          String?
@@ -59,11 +96,15 @@ model User {
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
-  accounts Account[]
-  sessions Session[]
-  categories   Category[]
-  statements   Statement[]
-  transactions Transaction[]
+  accounts          Account[]
+  sessions          Session[]
+  categories        Category[]
+  statements        Statement[]
+  transactions      Transaction[]
+  subscription      Subscription?
+  activityEvents    ActivityEvent[]
+  auditLogsAsAdmin  AuditLog[]      @relation("AuditAdmin")
+  auditLogsAsTarget AuditLog[]      @relation("AuditTarget")
 
   @@map("users")
 }
@@ -119,12 +160,12 @@ model VerificationToken {
 // Financial based schema
 
 model Category {
-  id        String       @id @default(cuid())
-  userId    String?      @map("user_id")
-  name      String
-  icon      String?
-  colour    String?
-  type      CategoryType
+  id     String       @id @default(cuid())
+  userId String?      @map("user_id")
+  name   String
+  icon   String?
+  colour String?
+  type   CategoryType
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -182,4 +223,70 @@ model Transaction {
   @@index([statementId])
   @@index([categoryId])
   @@map("transactions")
+}
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  userId               String             @unique @map("user_id")
+  stripeCustomerId     String             @unique @map("stripe_customer_id")
+  stripeSubscriptionId String             @unique @map("stripe_subscription_id")
+  plan                 Plan
+  status               SubscriptionStatus
+  trialEndsAt          DateTime?          @map("trial_ends_at")
+  trialReminderSentAt  DateTime?          @map("trial_reminder_sent_at")
+  currentPeriodEnd     DateTime           @map("current_period_end")
+  cancelAtPeriodEnd    Boolean            @default(false) @map("cancel_at_period_end")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model StripeEvent {
+  id          String   @id
+  type        String
+  processedAt DateTime @default(now()) @map("processed_at")
+
+  @@map("stripe_events")
+}
+
+model ActivityEvent {
+  id        String       @id @default(cuid())
+  userId    String?      @map("user_id")
+  type      ActivityType
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([type, createdAt])
+  @@index([userId])
+  @@map("activity_events")
+}
+
+model DailyMetric {
+  date  DateTime     @db.Date
+  type  ActivityType
+  count Int
+
+  @@id([date, type])
+  @@map("daily_metrics")
+}
+
+model AuditLog {
+  id           String      @id @default(cuid())
+  adminId      String?     @map("admin_id")
+  targetUserId String?     @map("target_user_id")
+  action       AuditAction
+  createdAt    DateTime    @default(now()) @map("created_at")
+
+  admin      User? @relation("AuditAdmin", fields: [adminId], references: [id], onDelete: SetNull)
+  targetUser User? @relation("AuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([adminId])
+  @@index([targetUserId])
+  @@map("audit_logs")
 }
