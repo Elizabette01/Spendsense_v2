@@ -1,6 +1,7 @@
 import "server-only";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
+import { PHASE_PRODUCTION_BUILD } from "next/constants";
 
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
@@ -8,7 +9,9 @@ const globalForPrisma = globalThis as unknown as {
 
 function createPrismaClient() {
   const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
+  const isBuild = process.env.NEXT_PHASE === PHASE_PRODUCTION_BUILD;
+
+  if (!connectionString && !isBuild) {
     throw new Error("DATABASE_URL is not set");
   }
 
