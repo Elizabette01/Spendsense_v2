@@ -23,6 +23,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.sessionVersion = user.sessionVersion;
       }
       return token;
+    }, 
+  },
+
+    events: {
+    async createUser({ user }) {
+      if (!user.id) return;
+      await db.user.update({
+        where: { id: user.id },
+        data: { emailVerified: new Date() },
+      });
     },
   },
 });
