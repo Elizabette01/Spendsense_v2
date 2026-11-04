@@ -21,7 +21,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         token.role = user.role;
         token.sessionVersion = user.sessionVersion;
+        return token;
       }
+      
+
+      if (!token.sub) return null;
+
+      const dbUser = await db.user.findUnique({
+        where: { id: token.sub },
+        select: { role: true, sessionVersion: true },
+      });
+
+      if (!dbUser || dbUser.sessionVersion !== token.sessionVersion) {
+        return null;
+      }
+
+      token.role = dbUser.role;
       return token;
     }, 
   },
