@@ -2,11 +2,23 @@ import NextAuth from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { db } from "@/lib/db";
 import { authConfig } from "./auth.config";
+import Credentials from "next-auth/providers/credentials";
+import { authorizeCredentials } from "@/features/auth/credentials";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
     trustHost: process.env.AUTH_TRUST_HOST === "true" ? true : undefined,
   adapter: PrismaAdapter(db),
+    providers: [
+    ...authConfig.providers,
+    Credentials({
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      authorize: authorizeCredentials,
+    }),
+  ],
   callbacks: {
     ...authConfig.callbacks,
 
