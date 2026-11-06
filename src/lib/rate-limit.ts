@@ -9,6 +9,7 @@ export const LIMITS = {
   forgotPasswordEmail: { limit: 3, windowSeconds: 60 * 60 },
   forgotPasswordIp: { limit: 10, windowSeconds: 60 * 60 },
   resendVerificationEmail: { limit: 3, windowSeconds: 60 * 60 },
+  resendVerificationIp: { limit: 10, windowSeconds: 60 * 60 },
 } as const;
 
 type RateLimitResult = {

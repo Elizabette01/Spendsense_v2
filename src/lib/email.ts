@@ -63,3 +63,14 @@ export async function sendPasswordResetEmail(
     html: `<p>Someone asked to reset your SpendSense password.</p><p><a href="${url}">Reset your password</a></p><p>The link expires in 1 hour. If this wasn't you, ignore this email: your password won't change.</p>`,
   });
 }
+
+export async function sendAccountExistsEmail(to: string): Promise<void> {
+  const signInUrl = appUrl("/sign-in");
+  const resetUrl = appUrl("/forgot-password");
+  await send({
+    to,
+    subject: "You already have a SpendSense account",
+    text: `Someone tried to create a SpendSense account with this email, but you already have one.\n\nSign in: ${signInUrl}\nForgot your password? ${resetUrl}\n\nIf this wasn't you, you can ignore this email.`,
+    html: `<p>Someone tried to create a SpendSense account with this email, but you already have one.</p><p><a href="${signInUrl}">Sign in</a> or <a href="${resetUrl}">reset your password</a>.</p><p>If this wasn't you, you can ignore this email.</p>`,
+  });
+}

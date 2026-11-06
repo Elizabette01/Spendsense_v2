@@ -1,9 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import * as argon2 from "argon2";
-
-export const PASSWORD_MIN_LENGTH = 12;
-export const PASSWORD_MAX_LENGTH = 128;
+import { normalizePassword } from "@/lib/password-rules";
 
 const ARGON2_OPTIONS = {
   type: argon2.argon2id,
@@ -12,20 +10,6 @@ const ARGON2_OPTIONS = {
   parallelism: 1,
 } as const;
 
-// ---------- Normalising and length ----------
-
-export function normalizePassword(password: string): string {
-  return password.normalize("NFKC");
-}
-
-export function countCharacters(value: string): number {
-  return [...value].length;
-}
-
-export function isValidPasswordLength(password: string): boolean {
-  const length = countCharacters(normalizePassword(password));
-  return length >= PASSWORD_MIN_LENGTH && length <= PASSWORD_MAX_LENGTH;
-}
 
 // ---------- Hashing and verifying ----------
 
