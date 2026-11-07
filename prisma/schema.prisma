@@ -290,3 +290,12 @@ model AuditLog {
   @@index([targetUserId])
   @@map("audit_logs")
 }
+
+model RateLimit {
+  key     String   @id
+  count   Int
+  resetAt DateTime @map("reset_at") @db.Timestamptz(3)
+
+  @@index([resetAt])
+  @@map("rate_limits")
+}

@@ -1,0 +1,88 @@
+import { Suspense } from "react";
+import { signIn } from "@/auth";
+import {
+  resendVerification,
+  verifyEmail,
+} from "@/features/auth/actions/verify-email";
+
+type SearchParams = Promise<{ token?: string; status?: string }>;
+
+export default function VerifyEmailPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  return (
+    <main>
+      <Suspense fallback={<p>Loading…</p>}>
+        <VerifyEmailContent searchParams={searchParams} />
+      </Suspense>
+    </main>
+  );
+}
+
+async function VerifyEmailContent({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const { token, status } = await searchParams;
+
+    if (status === "verified") {
+    return (
+      <>
+        <h1>Email verified</h1>
+        <p>Your email is confirmed. You can now sign in.</p>
+        <form
+          action={async () => {
+            "use server";
+            await signIn(undefined, { redirectTo: "/" });
+          }}
+        >
+          <button type="submit">Sign in</button>
+        </form>
+      </>
+    );
+  }
+
+  if (status === "sent") {
+    return (
+      <>
+        <h1>Check your email</h1>
+        <p>If that email has an account waiting to be verified, we&apos;ve sent a new link. It expires in 24 hours.</p>
+      </>
+    );
+  }
+
+  if (status === "limited") {
+    return (
+      <>
+        <h1>Too many requests</h1>
+        <p>Please wait a while before asking for another email.</p>
+      </>
+    );
+  }
+
+  if (token && !status) {
+    return (
+      <>
+        <h1>Verify your email</h1>
+        <form action={verifyEmail}>
+          <input type="hidden" name="token" value={token} />
+          <button type="submit">Confirm my email</button>
+        </form>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <h1>This link is invalid or has expired</h1>
+      <p>Enter your email and we&apos;ll send a new verification link.</p>
+      <form action={resendVerification}>
+        <input type="email" name="email" required placeholder="Email" />
+        <button type="submit">Send a new link</button>
+      </form>
+    </>
+  );
+}
