@@ -31,6 +31,7 @@ async function VerifyEmailContent({
     return (
       <>
         <h1>Email verified</h1>
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- Auth.js built-in page (route handler), not a React page; becomes <Link href="/sign-in"> at B6 */}
         <p>Your email is confirmed. You can now <a href="/api/auth/signin">sign in</a>.</p>
       </>
     );
