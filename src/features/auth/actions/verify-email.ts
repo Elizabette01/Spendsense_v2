@@ -2,15 +2,13 @@
 
 import { after } from "next/server";
 import { redirect } from "next/navigation";
-import { z } from "zod";
 import { db } from "@/lib/db";
 import { consumeAuthToken, createAuthToken } from "@/lib/tokens";
 import { sendVerificationEmail } from "@/lib/email";
 import { LIMITS, hashIdentifier, rateLimit } from "@/lib/rate-limit";
 import { getClientIp } from "@/lib/request";
-import { emailSchema } from "../schemas";
+import { emailSchema, tokenSchema } from "../schemas";
 
-const tokenSchema = z.string().min(1).max(100);
 
 export async function verifyEmail(formData: FormData): Promise<void> {
   const parsed = tokenSchema.safeParse(formData.get("token"));
