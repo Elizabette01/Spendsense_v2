@@ -12,13 +12,15 @@ export const emailSchema = z
   .transform((value) => value.normalize("NFKC"))
   .pipe(z.email("Enter a valid email address").max(254));
 
+export const newPasswordSchema = z
+  .string()
+  .refine(
+    isValidPasswordLength,
+    `Use between ${PASSWORD_MIN_LENGTH} and ${PASSWORD_MAX_LENGTH} characters`,
+  );
+
 export const registerSchema = z.object({
   name: z.string().trim().min(1, "Enter your name").max(100, "Name is too long"),
   email: emailSchema,
-  password: z
-    .string()
-    .refine(
-      isValidPasswordLength,
-      `Use between ${PASSWORD_MIN_LENGTH} and ${PASSWORD_MAX_LENGTH} characters`,
-    ),
+  password: newPasswordSchema,
 });

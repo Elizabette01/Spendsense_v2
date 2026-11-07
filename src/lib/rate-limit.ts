@@ -10,6 +10,8 @@ export const LIMITS = {
   forgotPasswordIp: { limit: 10, windowSeconds: 60 * 60 },
   resendVerificationEmail: { limit: 3, windowSeconds: 60 * 60 },
   resendVerificationIp: { limit: 10, windowSeconds: 60 * 60 },
+  resetPasswordIp: { limit: 10, windowSeconds: 60 * 60 },
+  changePasswordUser: { limit: 5, windowSeconds: 15 * 60 },
 } as const;
 
 type RateLimitResult = {
