@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { signIn } from "@/auth";
 import {
   resendVerification,
   verifyEmail,
@@ -27,12 +28,19 @@ async function VerifyEmailContent({
 }) {
   const { token, status } = await searchParams;
 
-  if (status === "verified") {
+    if (status === "verified") {
     return (
       <>
         <h1>Email verified</h1>
-        {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- Auth.js built-in page (route handler), not a React page; becomes <Link href="/sign-in"> at B6 */}
-        <p>Your email is confirmed. You can now <a href="/api/auth/signin">sign in</a>.</p>
+        <p>Your email is confirmed. You can now sign in.</p>
+        <form
+          action={async () => {
+            "use server";
+            await signIn(undefined, { redirectTo: "/" });
+          }}
+        >
+          <button type="submit">Sign in</button>
+        </form>
       </>
     );
   }
