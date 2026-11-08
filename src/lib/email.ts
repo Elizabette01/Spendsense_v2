@@ -65,7 +65,7 @@ export async function sendPasswordResetEmail(
 }
 
 export async function sendAccountExistsEmail(to: string): Promise<void> {
-  const signInUrl = appUrl("/sign-in");
+  const signInUrl = appUrl("/login");
   const resetUrl = appUrl("/forgot-password");
   await send({
     to,
