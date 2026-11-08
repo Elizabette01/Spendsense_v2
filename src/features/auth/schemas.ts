@@ -3,6 +3,8 @@ import {
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   isValidPasswordLength,
+  countCharacters,
+  normalizePassword,
 } from "@/lib/password-rules";
 
 export const tokenSchema = z.string().min(1).max(100);
@@ -26,4 +28,12 @@ export const registerSchema = z.object({
   email: emailSchema,
   password: newPasswordSchema,
 });
+
+export const existingPasswordSchema = z
+  .string()
+  .min(1, "Enter your password")
+  .refine(
+    (value) => countCharacters(normalizePassword(value)) <= PASSWORD_MAX_LENGTH,
+    "Password is too long",
+  );
 
