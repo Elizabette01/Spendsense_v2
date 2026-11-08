@@ -7,7 +7,7 @@ import { authorizeCredentials } from "@/features/auth/credentials";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
-    trustHost: process.env.AUTH_TRUST_HOST === "true" ? true : undefined,
+   
   adapter: PrismaAdapter(db),
     providers: [
     ...authConfig.providers,
@@ -54,12 +54,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
 
     events: {
-    async createUser({ user }) {
-      if (!user.id) return;
-      await db.user.update({
-        where: { id: user.id },
-        data: { emailVerified: new Date() },
-      });
+      async createUser({ user }) {
+        if (!user.id) return;
+        await db.$transaction([
+          db.user.update({
+            where: { id: user.id },
+            data: { emailVerified: new Date() },
+          }),
+          db.activityEvent.create({
+            data: { type: "SIGN_UP", userId: user.id },
+          }),
+        ]);
+      },
     },
-  },
 });
