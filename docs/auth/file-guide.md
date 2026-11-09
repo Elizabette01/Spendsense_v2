@@ -744,3 +744,75 @@ These are small building blocks with no auth knowledge, so any feature can use t
 **Security notes:** none.
 
 **Notes:** only one page uses it so far. It lives in `ui/` because the brief listed card as a shared primitive.
+
+### Shared layout (`src/components/layout/`)
+
+These are the page frames used by more than one area. They never import from `features/`: anything auth-specific (who's signed in, the sign-out button) is passed in as a prop or "slot" by the route's layout. That keeps the rule "features don't import each other, and shared code doesn't depend on features".
+
+#### `src/components/layout/logo.tsx`
+
+**What it does:** The green "S" tile plus the "SpendSense" wordmark from the Figma navbar. It links to `/` by default, and has an `inverse` tone (white text) for the green login panel.
+
+**Runs on:** both.
+
+**Exports:** `Logo` (`tone`, `asLink` props).
+
+**Depends on (imports):** packages `next/link`.
+
+**Used by (imported by):** `src/components/layout/site-header.tsx`, `app-shell.tsx`; `src/features/auth/components/auth-split-card.tsx`; `src/features/marketing/components/site-footer.tsx`.
+
+**Security notes:** none.
+
+**Notes:** the Figma login panel showed the green logo on a green background, which is unreadable. The `inverse` tone fixes that.
+
+#### `src/components/layout/site-header.tsx`
+
+**What it does:** The sticky top navbar for the landing and auth pages: logo on the left, an `actions` slot on the right.
+
+**Runs on:** server (no `"use client"`). It renders the client `HeaderMenu`.
+
+**Exports:** `SiteHeader({ actions })`.
+
+**Depends on (imports):** `./logo`, `./header-menu`.
+
+**Used by (imported by):** `src/app/(auth)/layout.tsx`, `src/app/(marketing)/layout.tsx` (both pass `<HeaderAuthActions />`).
+
+**Security notes:** none.
+
+#### `src/components/layout/header-menu.tsx`
+
+**What it does:** The right side of the navbar. On `sm` screens and up, the actions sit inline. On phones, a hamburger button (Figma "Mobile Nav") toggles a dropdown. The actions are rendered **once**, and only their container's classes change with screen size, so the server-rendered, session-aware buttons aren't duplicated (which would mean two `auth()` calls).
+
+**Runs on:** browser too (`"use client"`; it holds the open/closed state).
+
+**Exports:** `HeaderMenu({ children })`.
+
+**Depends on (imports):** packages `react` (`useState`, `useEffect`, `useId`).
+
+**Used by (imported by):** `src/components/layout/site-header.tsx`.
+
+**Security notes:** none.
+
+**Notes:** the button has `aria-expanded` and `aria-controls`. Escape closes the menu, and clicking a link inside closes it too. It needs JavaScript to open on mobile. The links themselves are ordinary links.
+
+#### `src/components/layout/app-shell.tsx`
+
+**What it does:** The signed-in app layout from the Figma Settings and "Mobile — Hamburger Menu" frames. On desktop (`lg`+) it's a fixed 280px sidebar with the logo, a `user` slot, the MAIN nav links, then Settings and a `signOut` slot at the bottom. On mobile there's a top bar with a hamburger, and the *same* sidebar element slides in as a drawer over a dimmed overlay. The current page's link is highlighted (`aria-current="page"`). It wraps the page in `<main>`.
+
+**Runs on:** browser too (`"use client"`; it needs `usePathname()` and the drawer state).
+
+**Exports:** `AppShell({ user, signOut, children })`.
+
+**Depends on (imports):** `./logo`; packages `next/link`, `next/navigation` (`usePathname`), `react`.
+
+**Used by (imported by):** `src/app/(app)/layout.tsx`.
+
+**Security notes:** none. It shows links, and every page and action behind them checks access itself.
+
+**Notes:**
+- Opening the drawer moves focus to its close button. Escape or the close button returns focus to the hamburger (tested). When closed on mobile, the drawer is `invisible`, so it can't be tabbed into.
+- "Settings" links to `/settings/password` for now, because there's no `/settings` page yet. It's highlighted on any `/settings/*` URL.
+- Budgets is in the list because the mobile frame shows it (the desktop frame doesn't).
+- The Figma "Theme" toggle isn't built (dark-mode switching isn't in scope yet).
+- Icons are the text glyphs from the design, with `︎` added to ask for text rather than emoji style. On Windows the "↑" may still render blue, which is only cosmetic.
+- Links to `/transactions`, `/recurring`, `/imports`, `/insights` and `/budgets` show a 404 until those pages exist.
