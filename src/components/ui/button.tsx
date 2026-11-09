@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ComponentProps } from "react";
 
-type Variant = "primary" | "outline" | "ghost";
+type Variant = "primary" | "secondary" | "outline" | "ghost";
 type Size = "md" | "lg";
 
 type StyleOptions = {
@@ -18,6 +18,8 @@ const base =
 
 const variants: Record<Variant, string> = {
   primary: "bg-primary text-primary-foreground hover:bg-brand-800",
+  // Figma "Button/Secondary": green outline on a light surface
+  secondary: "border border-primary bg-card text-primary hover:bg-accent",
   // Border uses foreground-subtle so the button edge meets 3:1 contrast
   outline:
     "border border-foreground-subtle bg-card text-foreground hover:bg-background",
