@@ -325,3 +325,33 @@ This guide is a map of every file that takes part in signing users up, signing t
 - Old tokens of the same type are deleted when a new one is made, so only the newest email link works.
 
 **Notes:** an expired token is deleted when someone tries it (it's consumed first and then rejected), which is fine because it was useless anyway.
+
+### `src/lib/email.ts`
+
+**What it does:** Sends the four auth emails through Resend: verify your email, reset your password, "you already have an account", and "your password was changed". Each has a plain-text and an HTML version. Links are built from `APP_URL`. The Resend client is created on first use, not when the file loads.
+
+**Runs on:** server only (`import "server-only"`).
+
+**Exports:**
+- `sendVerificationEmail(to, token)`: link to `/verify-email?token=…` (24 hours).
+- `sendPasswordResetEmail(to, token)`: link to `/reset-password?token=…` (1 hour).
+- `sendAccountExistsEmail(to)`: links to `/login` and `/forgot-password`.
+- `sendPasswordChangedEmail(to)`: notice with a link to `/forgot-password` in case it wasn't them.
+
+**Depends on (imports):**
+- Internal: none.
+- Packages: `server-only`, `resend`.
+- Environment variables read: `RESEND_API_KEY`, `EMAIL_FROM`, `APP_URL` (each read lazily, so a missing value only fails when an email is actually sent, not during `next build`).
+
+**Used by (imported by):**
+- `src/features/auth/actions/register.ts` (verification, account exists)
+- `src/features/auth/actions/verify-email.ts` (verification resend)
+- `src/features/auth/actions/password-reset.ts` (reset link, changed notice)
+- `src/features/auth/actions/change-password.ts` (changed notice)
+
+**Security notes:**
+- `sendAccountExistsEmail` is the anti-enumeration piece of sign-up: the form says the same thing whether or not the email is taken, and only the inbox owner learns an account exists.
+- Links are built from the server's `APP_URL`, never from the request's `Host` header, so an attacker can't make reset links point to their own domain.
+- Failures are logged by error name and message only, never with the token or link.
+
+**Notes:** with the Resend test sender, only the Resend account's own address actually receives mail. Sending to any other address makes `send()` throw. (For automated testing, Resend's `delivered@resend.dev` inbox, with a `+label`, works.)
