@@ -14,7 +14,8 @@ export function Cta() {
         <p className="text-base text-primary-foreground sm:text-lg">
           Join SpendSense today. It&apos;s free to get started.
         </p>
-        <ButtonLink href="/signup" variant="secondary" size="lg" className="mt-2 w-full sm:w-auto">
+        {/* White in both themes (the secondary variant turns dark in dark mode) */}
+        <ButtonLink href="/signup" variant="inverse" size="lg" className="mt-2 w-full sm:w-auto">
           Create your free account
         </ButtonLink>
       </div>

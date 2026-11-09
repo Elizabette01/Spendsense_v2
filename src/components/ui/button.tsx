@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ComponentProps } from "react";
 
-type Variant = "primary" | "secondary" | "outline" | "ghost";
+type Variant = "primary" | "secondary" | "outline" | "ghost" | "inverse";
 type Size = "md" | "lg";
 
 type StyleOptions = {
@@ -25,6 +25,9 @@ const variants: Record<Variant, string> = {
   outline:
     "border border-foreground-subtle bg-card text-foreground hover:bg-background",
   ghost: "text-primary hover:bg-accent",
+  // White button for green/coloured backgrounds, same in both themes
+  // (brand-800 on white is ~10:1 contrast)
+  inverse: "bg-white text-brand-800 hover:bg-brand-50 focus-visible:outline-white",
 };
 
 const sizes: Record<Size, string> = {
