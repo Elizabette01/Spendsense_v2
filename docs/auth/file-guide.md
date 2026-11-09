@@ -648,3 +648,99 @@ There are two styles:
 **Form fields:** `currentPassword`, `newPassword`.
 
 **Security notes:** the user id comes from the session, never the form. Requiring the current password stops someone at an unlocked computer from taking over the account. Every device, including this one, is signed out (tested in B6: the old session was rejected afterwards).
+
+---
+
+## UI
+
+The UI files were built in B6 from the Figma file (`mgf2GJR0QdxCas9EqRDXaK`). They use only the Tailwind tokens from `src/app/globals.css`. Where a Figma colour failed WCAG AA, the entry says what was changed. None of them stores, logs or persists form values.
+
+### Shared UI primitives (`src/components/ui/`)
+
+These are small building blocks with no auth knowledge, so any feature can use them. They're plain components (no `"use client"`), so they work in both server and client components.
+
+#### `src/components/ui/button.tsx`
+
+**What it does:** One visual style for buttons and button-looking links. `buttonStyles()` builds the class list from a variant (`primary`, `secondary`, `outline`, `ghost`) and a size (`md` 44px, `lg` 48px), so a `<button>` and a `<Link>` can look identical.
+
+**Runs on:** both.
+
+**Exports:**
+- `buttonStyles(options)`: the class string.
+- `Button`: a `<button>` (defaults to `type="button"`, so it never submits a form by accident).
+- `ButtonLink`: a Next.js `<Link>` styled as a button. Use it for navigation (e.g. "Log in now").
+
+**Depends on (imports):** packages `next/link`. Env: none.
+
+**Used by (imported by):** `src/features/auth/components/submit-button.tsx`, `header-auth-actions.tsx`, `signup-form.tsx`; `src/app/(auth)/reset-password/page.tsx`, `verify-email/page.tsx`; `src/features/marketing/components/hero.tsx`, `cta.tsx`, `pricing-plans.tsx`.
+
+**Security notes:** none.
+
+**Notes:** `primary` matches Figma "Button/Primary"; `secondary` is "Button/Secondary" (green outline); `outline` uses `foreground-subtle` for its border so the edge meets the 3:1 contrast rule for UI components (the Figma grey border didn't). Every variant has a visible `focus-visible` outline.
+
+#### `src/components/ui/input.tsx`
+
+**What it does:** The text input from the Figma "Email address" field.
+
+**Runs on:** both.
+
+**Exports:**
+- `inputStyles`: the class string, reused by `PasswordInput`.
+- `Input`: an `<input>` with those styles.
+
+**Depends on (imports):** none.
+
+**Used by (imported by):** `src/features/auth/components/login-form.tsx`, `signup-form.tsx`, `password-input.tsx` (`inputStyles`); `src/app/(auth)/forgot-password/page.tsx`, `verify-email/page.tsx`.
+
+**Security notes:** none.
+
+**Notes:** the border is `foreground-subtle` rather than the lighter Figma grey, for 3:1 contrast. Inputs with `aria-invalid` get a red border automatically (`aria-invalid:` variant).
+
+#### `src/components/ui/form-field.tsx`
+
+**What it does:** A visible `<label>`, the input, optional helper text and an optional error, wired together for screen readers. It hands its child the `id`, `aria-describedby` (pointing at the hint and error) and `aria-invalid`, using a "render prop": `children` is a function that receives those props and returns the input.
+
+**Runs on:** both.
+
+**Exports:**
+- `FormField`: the wrapper.
+- `FieldError`: the red error line (with a ⚠ icon, so colour isn't the only signal).
+- `FieldControlProps`: the type of the props passed to the input.
+
+**Depends on (imports):** none.
+
+**Used by (imported by):** `src/features/auth/components/login-form.tsx`, `signup-form.tsx`, `change-password-form.tsx`; `src/app/(auth)/forgot-password/page.tsx`, `reset-password/page.tsx`, `verify-email/page.tsx`.
+
+**Security notes:** none.
+
+**Notes:** `FieldError` is exported but only used inside this file so far.
+
+#### `src/components/ui/form-alert.tsx`
+
+**What it does:** A banner for form-level messages, in three tones: `error` (red border, `role="alert"`, announced immediately), `success` and `info` (`role="status"`). It accepts a `ref` and `tabIndex={-1}`, so a form can move keyboard focus onto it after a failed submit.
+
+**Runs on:** both.
+
+**Exports:** `FormAlert`.
+
+**Depends on (imports):** none.
+
+**Used by (imported by):** `src/app/(auth)/login/page.tsx` (URL banners); `src/features/auth/components/login-form.tsx`, `signup-form.tsx`, `change-password-form.tsx`.
+
+**Security notes:** it only ever displays text the code passes in. Pages pass fixed messages, never raw URL values.
+
+#### `src/components/ui/card.tsx`
+
+**What it does:** A surface with the shared card radius, background and shadow.
+
+**Runs on:** both.
+
+**Exports:** `Card`.
+
+**Depends on (imports):** none.
+
+**Used by (imported by):** `src/app/(app)/settings/password/page.tsx`.
+
+**Security notes:** none.
+
+**Notes:** only one page uses it so far. It lives in `ui/` because the brief listed card as a shared primitive.
