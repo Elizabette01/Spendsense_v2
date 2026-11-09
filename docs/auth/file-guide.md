@@ -355,3 +355,47 @@ This guide is a map of every file that takes part in signing users up, signing t
 - Failures are logged by error name and message only, never with the token or link.
 
 **Notes:** with the Resend test sender, only the Resend account's own address actually receives mail. Sending to any other address makes `send()` throw. (For automated testing, Resend's `delivered@resend.dev` inbox, with a `+label`, works.)
+
+### `src/lib/request.ts`
+
+**What it does:** Works out the visitor's IP address for per-IP rate limits. It takes the first address in the `x-forwarded-for` header, falls back to `x-real-ip`, and uses `"unknown"` if neither is present.
+
+**Runs on:** server only (`import "server-only"`; reads request headers, so it only works during a request).
+
+**Exports:**
+- `getClientIp()`: the IP as a string.
+
+**Depends on (imports):**
+- Internal: none.
+- Packages: `server-only`, `next/headers` (`headers()`).
+- Environment variables read: none.
+
+**Used by (imported by):**
+- `src/features/auth/credentials.ts`, `src/features/auth/actions/register.ts`, `verify-email.ts`, `password-reset.ts` (all for per-IP rate-limit keys)
+
+**Security notes:** the IP is hashed by the callers before it's stored.
+
+**Notes:**
+- `x-forwarded-for` can be set by the client unless a trusted proxy overwrites it. On Vercel the platform sets it, so it's reliable there. On a host that passes the client's header through, an attacker could change it on each request and dodge the per-IP limits (the per-email limits still apply). The handoff's Step 9 list already has "check `x-forwarded-for`".
+- Every request without either header shares the single `"unknown"` bucket.
+
+### `src/lib/activity.ts`
+
+**What it does:** Records that a user was active today, at most once per UTC day. A conditional update sets `lastActiveAt` only if it's empty or from before today, and only when that update actually changed a row does it add an `ACTIVE_DAY` event. Both happen in one transaction.
+
+**Runs on:** server only (`import "server-only"`).
+
+**Exports:**
+- `recordActivity(userId)`.
+
+**Depends on (imports):**
+- Internal: `@/lib/db`.
+- Packages: `server-only`.
+- Environment variables read: none.
+
+**Used by (imported by):**
+- `src/features/auth/activity-tracker.tsx` (called in `after()` on every signed-in app page view)
+
+**Security notes:** none (analytics only), but it always takes the `userId` from the session, never from the request.
+
+**Notes:** `lastActiveAt` holds the time of the *first* visit each day, not the latest. Two requests at the same moment can't both create an event, because only one `updateMany` gets `count === 1`.
