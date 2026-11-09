@@ -32,7 +32,8 @@ export function AuthSplitCard({ panelTitle, panelText, children }: AuthSplitCard
         </p>
       </aside>
 
-      <div className="flex flex-1 flex-col justify-center gap-6 py-6 sm:px-12 sm:py-12 lg:px-26">
+      {/* Top-aligned on phones (Figma mobile frames), centred in the card from sm up */}
+      <div className="flex flex-1 flex-col justify-start gap-6 py-6 sm:justify-center sm:px-12 sm:py-12 lg:px-26">
         <div className="mx-auto flex w-full max-w-128 flex-col gap-6 sm:gap-7">
           {children}
         </div>
