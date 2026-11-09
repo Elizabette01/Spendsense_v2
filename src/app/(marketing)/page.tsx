@@ -4,6 +4,7 @@ import { Features } from "@/features/marketing/components/features";
 import { Hero } from "@/features/marketing/components/hero";
 import { HowItWorks } from "@/features/marketing/components/how-it-works";
 import { Pricing } from "@/features/marketing/components/pricing";
+import { ScrollToTop } from "@/features/marketing/components/scroll-to-top";
 
 export const metadata: Metadata = {
   title: "SpendSense · AI budgeting insights from your bank statements",
@@ -20,6 +21,7 @@ export default function LandingPage() {
       <HowItWorks />
       <Pricing />
       <Cta />
+      <ScrollToTop />
     </>
   );
 }
