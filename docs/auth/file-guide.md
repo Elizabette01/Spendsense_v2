@@ -399,3 +399,38 @@ This guide is a map of every file that takes part in signing users up, signing t
 **Security notes:** none (analytics only), but it always takes the `userId` from the session, never from the request.
 
 **Notes:** `lastActiveAt` holds the time of the *first* visit each day, not the latest. Two requests at the same moment can't both create an event, because only one `updateMany` gets `count === 1`.
+
+---
+
+## Feature logic (`src/features/auth/`)
+
+### `src/features/auth/schemas.ts`
+
+**What it does:** The Zod schemas that check and clean auth input on the server. Emails are trimmed, lower-cased, NFKC-normalised, checked as an email and capped at 254 characters. New passwords must pass the 12–128 rule. Existing passwords (for sign-in and "current password") only check the maximum, because old accounts may have shorter passwords. The registration schema checks first name, last name, email and password together.
+
+**Runs on:** server in practice (only server actions and `credentials.ts` import it). It has no server-only imports, so it could run in the browser too.
+
+**Exports:**
+- `tokenSchema`: 1–100 character string (a token from a link).
+- `emailSchema`: the cleaned, validated email.
+- `newPasswordSchema`: the 12–128 rule, with the message "Use between 12 and 128 characters".
+- `registerSchema`: `{ firstName, lastName, email, password }`; names are trimmed, 1–50 characters each.
+- `existingPasswordSchema`: required, at most 128 characters.
+
+**Depends on (imports):**
+- Internal: `@/lib/password-rules`.
+- Packages: `zod` (v4 API: `z.email()`).
+- Environment variables read: none.
+
+**Used by (imported by):**
+- `src/features/auth/credentials.ts` (`emailSchema`)
+- `src/features/auth/actions/register.ts` (`registerSchema`)
+- `src/features/auth/actions/verify-email.ts` (`emailSchema`, `tokenSchema`)
+- `src/features/auth/actions/password-reset.ts` (`emailSchema`, `newPasswordSchema`, `tokenSchema`)
+- `src/features/auth/actions/change-password.ts` (`existingPasswordSchema`, `newPasswordSchema`)
+
+**Security notes:** this is the server-side validation every form relies on; the browser's `required` and `type="email"` are only conveniences. Normalising emails means `Me@X.com` and `me@x.com` are the same account.
+
+**Notes:**
+- `registerSchema` was changed in B6 from one `name` field to `firstName` and `lastName` (with Elizabette's approval). `register` joins them as `"First Last"` in the existing `name` column.
+- `newPasswordSchema`'s message has no full stop, but the reset page's own `length` message does ("Use between 12 and 128 characters."). This is only cosmetic.
