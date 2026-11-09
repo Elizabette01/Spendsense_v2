@@ -50,12 +50,12 @@ This guide is a map of every file that takes part in signing users up, signing t
 
 ### `src/auth.config.ts`
 
-**What it does:** The "light" half of the Auth.js configuration: the settings that don't need the database. It turns on Google sign-in, says sessions are JWTs that last 7 days, points Auth.js's own sign-in and error pages at `/login`, and copies the user's id and role from the token into the session object the app reads. It's kept separate so the proxy can use it without pulling in Prisma.
+**What it does:** The "light" half of the Auth.js configuration: the settings that don't need the database. It turns on Google sign-in, says sessions are JWTs that last 7 days, points Auth.js's own sign-in and error pages at `/login`, and copies the user's id and role from the token into the session object the app reads. It's kept as a separate file so a database-free Auth.js instance *could* be built from it (the proxy used to do that; see the `proxy.ts` entry for why it no longer does).
 
-**Runs on:** server only (imported by the proxy and by `auth.ts`). Not marked `server-only`, but nothing in it would work in a browser.
+**Runs on:** server only (imported by `auth.ts`). Not marked `server-only`, but nothing in it would work in a browser.
 
 **Exports:**
-- `authConfig`: the shared settings object (`trustHost`, `pages`, `providers`, `session`, `callbacks.session`), spread into both Auth.js instances.
+- `authConfig`: the shared settings object (`trustHost`, `pages`, `providers`, `session`, `callbacks.session`), spread into the full configuration in `auth.ts`.
 
 **Depends on (imports):**
 - Internal: none.
@@ -64,7 +64,6 @@ This guide is a map of every file that takes part in signing users up, signing t
 
 **Used by (imported by):**
 - `src/auth.ts` (spreads it into the full configuration)
-- `src/proxy.ts` (creates a database-free Auth.js instance for redirects)
 
 **Security notes:** `session.maxAge` caps a stolen cookie's lifetime at 7 days. `pages.error: "/login"` means OAuth errors land on the login page with an `?error=` code, which the page maps to fixed messages (never printing the raw value). `trustHost` is only set to `true` when the env var says so, and never to `false` (see the handoff gotcha about `UntrustedHost`).
 
@@ -90,7 +89,8 @@ This guide is a map of every file that takes part in signing users up, signing t
 **Used by (imported by):**
 - `src/app/api/auth/[...nextauth]/route.ts` (`handlers`)
 - `src/features/auth/actions/sign-in.ts` (`signIn`), `sign-out.ts` (`signOut`), `change-password.ts` (`auth`, `signOut`)
-- `src/features/auth/activity-tracker.tsx`, `src/features/auth/components/header-auth-actions.tsx`, `src/features/auth/components/sidebar-user.tsx` (`auth`)
+- `src/proxy.ts` (`auth` as the proxy wrapper)
+- `src/features/auth/activity-tracker.tsx`, `src/features/auth/components/header-auth-actions.tsx`, `sidebar-user.tsx`, `require-session.tsx` (`auth`)
 
 **Security notes:**
 - `callbacks.signIn`: a Google sign-in is refused unless Google says the email is verified (`email_verified === true`), so nobody can claim an address they don't own.
@@ -99,33 +99,36 @@ This guide is a map of every file that takes part in signing users up, signing t
 - No automatic account linking is configured, so a Google sign-in for an email that already has a password account fails with `OAuthAccountNotLinked` (shown as a banner on `/login`).
 
 **Notes:**
-- Because the `jwt` callback queries the database on every `auth()` call, each page view that reads the session costs one small query. That's the price of instant session revocation.
+- Because the `jwt` callback queries the database on every `auth()` call, each request that carries a session cookie costs a small query in the proxy, plus one for each `auth()` call while rendering. That's the price of instant session revocation.
 - Credentials sign-ins don't go through `events.createUser`; `register` creates those users and their `SIGN_UP` event itself.
 
 ### `src/proxy.ts`
 
-**What it does:** Next.js 16's "proxy" (the file that used to be called middleware). It runs before every page request and does redirects only: admin URLs return a plain 404 unless the token's role is `ADMIN`; signed-out visitors to protected app URLs go to `/login?callbackUrl=<where they were going>`; signed-in visitors to `/login` or `/signup` go to `/dashboard`. It uses its own Auth.js instance built from `authConfig` alone, so it never touches the database.
+**What it does:** Next.js 16's "proxy" (the file that used to be called middleware). It runs before every page request and does redirects only: admin URLs return a plain 404 unless the token's role is `ADMIN`; signed-out visitors to protected app URLs go to `/login?callbackUrl=<where they were going>`; signed-in visitors to `/login` or `/signup` go to `/dashboard`. It wraps the **full** Auth.js instance from `auth.ts`, so "signed in" here means exactly what it means everywhere else: the `jwt` callback has checked `sessionVersion` and `role` in the database.
 
-**Runs on:** server, before routing (Next.js picks it up by file name; nothing imports it).
+**Runs on:** server, before routing, on the Node.js runtime (the Next 16 default for proxies, which is what lets it use Prisma). Next.js picks it up by file name; nothing imports it.
 
 **Exports:**
-- `proxy`: the request handler, wrapped in Auth.js's `auth()` so `req.auth` holds the decoded session token.
+- `proxy`: the request handler, wrapped in `auth()` from `@/auth`, so `req.auth` holds the validated session (or `null`).
 - `config`: the `matcher`, which skips `/api`, `_next/static`, `_next/image`, the favicon and image files.
 
 **Depends on (imports):**
-- Internal: `@/auth.config` (the database-free settings).
-- Packages: `next-auth`, `next/server` (`NextResponse`).
+- Internal: `@/auth` (`auth`).
+- Packages: `next/server` (`NextResponse`).
 - Environment variables read: none directly (Auth.js reads `AUTH_SECRET` to decode the cookie).
 
 **Used by (imported by):** nobody imports it; Next.js runs it automatically.
 
 **Security notes:**
-- The admin check answers 404, not 403, so the admin area's existence isn't confirmed to outsiders.
+- A revoked or deleted session (password changed elsewhere, user removed) is treated as signed out, and Auth.js clears the dead cookie in the same response.
+- The admin check uses the role freshly read from the database, not the possibly stale copy in the cookie, and answers 404 rather than 403, so the admin area's existence isn't confirmed to outsiders.
 - The `callbackUrl` it adds is only a suggestion: the sign-in actions run it through `safeCallbackUrl()` before redirecting.
-- It does **not** check `sessionVersion` (that needs the database). A revoked token still gets past the proxy; the page's own `auth()` call then rejects it. That's why every page and action that touches user data must call `auth()` itself.
+- Pages and actions that touch user data must still call `auth()` themselves; the proxy only handles redirects. The `(app)` layout's `RequireSession` guard is the backup if a route is ever missing from `PROTECTED_PREFIXES`.
 
 **Notes:**
-- `PROTECTED_PREFIXES` is `["/dashboard", "/onboarding", "/settings"]`. The handoff says it covers "the seven app sections plus `/onboarding`", but `/transactions`, `/budgets`, `/imports`, `/insights` and `/recurring` aren't in the list. Those pages don't exist yet, so nothing is exposed today, but they'll need adding (or each page must handle signed-out visitors) before they're built.
+- **Changed after B6 testing (bug fix).** The proxy used to build its own Auth.js instance from `authConfig` alone, with no database. A stale cookie (for example after a password change on another device, or for a deleted user) still decrypted, so the proxy said "signed in" while `auth()` on the pages said "signed out". As a result, `/login`, `/signup` and every "Get started" button bounced to `/dashboard`, the header still showed "Log in", and the dashboard rendered for a visitor who wasn't really signed in. Using the full instance removes the disagreement.
+- Cost: one small database query for each request that carries a session cookie (signed-out visitors with no cookie cost nothing).
+- `PROTECTED_PREFIXES` now lists all seven app sections plus `/onboarding`, matching the handoff (`/transactions`, `/budgets`, `/imports`, `/insights` and `/recurring` were missing before).
 - `matches()` matches the exact path or `prefix/…`, so `/settingsx` isn't treated as `/settings`.
 
 ### `src/types/next-auth.d.ts`
@@ -1013,6 +1016,22 @@ UI used only by the auth feature. They import the server actions directly. Clien
 
 **Security notes:** sign-out is a POST (a form), not a link, so another site can't sign people out just by embedding a URL.
 
+#### `require-session.tsx`
+
+**What it does:** A guard that renders nothing. Inside its own `<Suspense>` it calls `auth()` and, if there's no valid session, `redirect("/login")`. Added after B6 testing as a backup to the proxy.
+
+**Runs on:** server (an async server component inside `<Suspense>`).
+
+**Exports:** `RequireSession`.
+
+**Depends on (imports):** `@/auth`; packages `next/navigation` (`redirect`), `next/server` (`connection`), `react`.
+
+**Used by (imported by):** `src/app/(app)/layout.tsx`.
+
+**Security notes:** defence in depth. Normally the proxy has already redirected signed-out visitors, but if an app route is ever missing from `PROTECTED_PREFIXES`, this stops its pages rendering for a signed-out visitor.
+
+**Notes:** it redirects to plain `/login` (without a `callbackUrl`); the proxy's redirect, which normally runs first, adds one.
+
 ### Auth pages (`src/app/(auth)/`)
 
 `(auth)` is a **route group**: the brackets organise files without adding to the URL, so `src/app/(auth)/login/page.tsx` is `/login`. Pages stay thin: they read the URL, pick a state and compose components from `features/auth/components`. Nothing imports a page; Next.js routes to it.
@@ -1116,15 +1135,15 @@ UI used only by the auth feature. They import the server actions directly. Clien
 
 #### `src/app/(app)/layout.tsx`
 
-**What it does:** The layout for every signed-in page. It renders `AppShell`, filling its slots with `SidebarUser` and `SignOutButton`, and keeps the pre-existing `<Suspense fallback={null}><ActivityTracker /></Suspense>` block unchanged after it.
+**What it does:** The layout for every signed-in page. It renders `RequireSession` (the backup sign-in check), then `AppShell` with its slots filled by `SidebarUser` and `SignOutButton`, and keeps the pre-existing `<Suspense fallback={null}><ActivityTracker /></Suspense>` block unchanged after it.
 
 **Runs on:** server. **Exports:** default `AppLayout`.
 
-**Depends on (imports):** `@/components/layout/app-shell`, `@/features/auth/activity-tracker`, `@/features/auth/components/sidebar-user`, `sign-out-button`; packages `react`.
+**Depends on (imports):** `@/components/layout/app-shell`, `@/features/auth/activity-tracker`, `@/features/auth/components/require-session`, `sidebar-user`, `sign-out-button`; packages `react`.
 
 **Used by:** Next.js, for `/dashboard`, `/settings/password` and future app pages.
 
-**Security notes:** the layout doesn't decide access. The proxy redirects signed-out visitors, and every page and action must still call `auth()` itself.
+**Security notes:** the proxy redirects signed-out visitors first. `RequireSession` redirects to `/login` if a request ever gets this far without a valid session. Pages and actions that touch user data must still call `auth()` themselves.
 
 #### `src/app/(app)/settings/password/page.tsx` → `/settings/password`
 
@@ -1390,6 +1409,7 @@ flowchart LR
       headerActions[header-auth-actions]
       sidebarUser[sidebar-user]
       signOutBtn[sign-out-button]
+      requireSession[require-session]
     end
     subgraph AuthPages["Auth pages"]
       authLayout["(auth)/layout"]
@@ -1420,7 +1440,7 @@ flowchart LR
 
   %% Config
   authts --> authconfig & db & credentials
-  proxy --> authconfig
+  proxy --> authts
   types --> schema
   route --> authts
 
@@ -1457,6 +1477,7 @@ flowchart LR
   headerActions --> authts & uiButton & aSignOut & submit
   sidebarUser --> authts
   signOutBtn --> aSignOut
+  requireSession --> authts
 
   %% Auth pages
   authLayout --> siteHeader & headerActions
@@ -1467,7 +1488,7 @@ flowchart LR
   pVerify --> aVerify & uiButton & uiField & uiInput & centeredCard & backToLogin & skeleton & submit
 
   %% App
-  appLayout --> appShell & tracker & sidebarUser & signOutBtn
+  appLayout --> requireSession & appShell & tracker & sidebarUser & signOutBtn
   pSettings --> uiCard & changeForm
 
   %% Landing
@@ -1570,18 +1591,21 @@ sequenceDiagram
   participant D as Database
   participant T as ActivityTracker
   U->>X: GET /dashboard (with or without cookie)
-  X->>X: decode JWT cookie (no database)
-  alt no valid cookie
+  alt no cookie
     X-->>U: 307 redirect to /login?callbackUrl=%2Fdashboard
   else cookie present
-    X->>L: continue to the page
-    L-->>U: static shell streams first
-    L->>Au: auth() inside Suspense (sidebar user, tracker)
-    Au->>J: existing token
+    X->>J: decode JWT, run jwt callback
     J->>D: select role, sessionVersion where id = token.sub
     alt user gone or sessionVersion changed
-      J-->>Au: null (signed out)
+      J-->>X: null (signed out)
+      X-->>U: 307 to /login?callbackUrl=… and clear the dead cookie
     else matches
+      J-->>X: valid session
+      X->>L: continue to the page
+      L-->>U: static shell streams first
+      L->>Au: auth() inside Suspense (RequireSession, sidebar user, tracker)
+      Au->>J: same check again (pages never trust the proxy alone)
+      J->>D: select role, sessionVersion
       J-->>Au: token with fresh role
       Au-->>L: session
       L-->>U: streamed user name and email
