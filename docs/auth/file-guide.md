@@ -297,3 +297,31 @@ This guide is a map of every file that takes part in signing users up, signing t
 - `deleteExpiredRateLimits()` isn't called anywhere yet (as the handoff says, it still needs scheduling), so expired rows stay in the table until then. They're harmless, because an expired row is reset on its next use.
 - The change-password key uses the raw user id (`changepw:user:<id>`) rather than a hash. User ids aren't personal data, so that's fine, but it differs slightly from the handoff's "keys hashed".
 - Every attempt counts, including successful ones. For example, five successful sign-ins in 15 minutes block the sixth.
+
+### `src/lib/tokens.ts`
+
+**What it does:** Creates and redeems the one-time tokens inside email links (verify email: 24 hours; reset password: 1 hour). A token is 32 random bytes in URL-safe base64. Only its SHA-256 hash is stored in `auth_tokens`, and creating a new token deletes the user's older tokens of the same type. Redeeming looks the hash up, deletes the row, and only then checks expiry.
+
+**Runs on:** server only (`import "server-only"`).
+
+**Exports:**
+- `createAuthToken(userId, type)`: returns the plain token (to put in the email link).
+- `consumeAuthToken(token, type)`: returns the `userId` if the token was valid, otherwise `null`. Single use.
+
+**Depends on (imports):**
+- Internal: `@/lib/db`, `@/generated/prisma/client` (the `AuthTokenType` type).
+- Packages: `server-only`, `node:crypto` (`randomBytes`, SHA-256).
+- Environment variables read: none.
+
+**Used by (imported by):**
+- `src/features/auth/actions/register.ts` (creates verification tokens)
+- `src/features/auth/actions/verify-email.ts` (consumes verification tokens; creates new ones on resend)
+- `src/features/auth/actions/password-reset.ts` (creates and consumes reset tokens)
+
+**Security notes:**
+- Storing only the hash means a database leak doesn't give anyone working links.
+- **Race-safe single use:** the token counts only if *this* request's `deleteMany` actually removed the row (`count === 1`), so two clicks at the same moment can't both succeed.
+- The type is checked, so a verification token can't be used as a reset token.
+- Old tokens of the same type are deleted when a new one is made, so only the newest email link works.
+
+**Notes:** an expired token is deleted when someone tries it (it's consumed first and then rejected), which is fine because it was useless anyway.
