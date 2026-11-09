@@ -33,6 +33,7 @@ Last updated: 8 Nov 2026 (backend B1–B5 done; next B6-0 prerequisites, then B6
 ## Still open
  
 - Whether the trial needs a card, final prices, the hosting provider.
+- **Later fix: Terms & Privacy consent on sign-up is UI-only.** The sign-up form (B6) shows the "I agree to the Terms & Conditions and Privacy Policy" checkbox (`name="acceptTerms"`, `required` in the browser), but `register` doesn't read or store it, so the server can't prove consent. To fix: add `acceptTerms: z.literal("on")` to `registerSchema`, add a `termsAcceptedAt DateTime?` (and ideally `termsVersion`) column to `User` and set it in `register`; also write the Terms and Privacy pages (the links currently point to `#`).
 ## Routes
  
 - **Auth pages (`src/app/(auth)/`):** `/login`, `/signup`, `/verify-email`, `/forgot-password`, `/reset-password`. (Folders are `login` and `signup`, not `sign-in`.)
