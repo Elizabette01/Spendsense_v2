@@ -434,3 +434,28 @@ This guide is a map of every file that takes part in signing users up, signing t
 **Notes:**
 - `registerSchema` was changed in B6 from one `name` field to `firstName` and `lastName` (with Elizabette's approval). `register` joins them as `"First Last"` in the existing `name` column.
 - `newPasswordSchema`'s message has no full stop, but the reset page's own `length` message does ("Use between 12 and 128 characters."). This is only cosmetic.
+
+### `src/features/auth/redirect.ts`
+
+**What it does:** Decides where to send someone after they sign in. It takes the untrusted `callbackUrl` from a form and returns a safe path on this site, or `/dashboard` if anything is off. The value must be a string that starts with `/`, is at most 2,048 characters, and still points at this site after the browser-standard URL parser has read it. A return to `/login` or `/signup` is replaced by `/dashboard`.
+
+**Runs on:** server (called from server actions). It has no imports and no `server-only` marker.
+
+**Exports:**
+- `safeCallbackUrl(value)`: a `FormDataEntryValue | null` in, a safe relative path out.
+
+**Depends on (imports):**
+- Internal: none. Packages: none. Environment variables read: none.
+
+**Used by (imported by):**
+- `src/features/auth/actions/sign-in.ts` (both `signInWithPassword` and `signInWithGoogle`)
+
+**Security notes:** this is the open-redirect guard. Rather than pattern-matching strings, it parses the value against a placeholder origin and checks the origin didn't change, so the tricky cases are caught by the same rules browsers use. Checked while writing this guide:
+- `//evil.com` → rejected (parses as host `evil.com`)
+- `/\evil.com` → rejected (the parser treats `\` like `/`)
+- `/%2F%2Fevil.com` → allowed, but as a harmless path on this site
+- `/settings/password?tab=a#b` → kept with its query and hash
+
+The B6 test "`/login?callbackUrl=//evil.com` → sign in → lands on `/dashboard`" passed in the browser.
+
+**Notes:** the UI never redirects using `callbackUrl` itself; it only passes it to the server in a hidden input.
