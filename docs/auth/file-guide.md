@@ -1137,3 +1137,149 @@ UI used only by the auth feature. They import the server actions directly. Clien
 **Security notes:** the page reads no user data, so it doesn't call `auth()`. The `changePassword` action does. `/settings` is in the proxy's protected list, so signed-out visitors are redirected to log in first.
 
 **Notes:** `src/app/(app)/dashboard/page.tsx` is still the placeholder heading, unchanged in B6.
+
+### Landing page (`src/app/(marketing)/` and `src/features/marketing/`)
+
+The landing page has no auth logic of its own, but it's the front door to sign-up and login, and its header is session-aware. It follows the Figma "Landing page" and "Mobile — Landing" frames. The pricing section had no frame and was designed from the page's own parts.
+
+**Copy rules applied throughout:** SpendSense is never described as financial advice or a financial adviser ("budgeting insights", "AI money coach" instead). There are no invented user counts, testimonials or ratings, and the preview figures are labelled as example data.
+
+#### `src/app/(marketing)/layout.tsx`
+
+**What it does:** `SiteHeader` (with `HeaderAuthActions`), then `<main>`, then `SiteFooter`.
+
+**Runs on:** server. **Exports:** default `MarketingLayout`.
+
+**Depends on (imports):** `@/components/layout/site-header`, `@/features/auth/components/header-auth-actions`, `@/features/marketing/components/site-footer`.
+
+**Used by:** Next.js, for `/`.
+
+**Security notes:** none.
+
+#### `src/app/(marketing)/page.tsx` → `/`
+
+**What it does:** Page metadata (title and description), then the sections in order: Hero, Features, How it works, Pricing, CTA. It reads no request data itself.
+
+**Runs on:** server. **Exports:** default `LandingPage`, `metadata`.
+
+**Depends on (imports):** `@/features/marketing/components/hero`, `features`, `how-it-works`, `pricing`, `cta`.
+
+**Security notes:** none.
+
+**Notes:** the build shows `/` as ◐ (partial prerender): everything is prerendered except the header buttons, which stream in per request so signed-in visitors see "Dashboard / Sign out". The brief originally asked for fully static; Elizabette approved this trade-off. There's no `src/app/page.tsx` competing for `/`.
+
+#### `src/features/marketing/pricing.ts`
+
+**What it does:** The single place for plan prices and features. Pro is £4.99/month or £49.99/year with a 7-day trial (placeholders until Stripe). It also has helpers to format a price and work out the yearly saving (£9.89), so the copy stays correct if prices change.
+
+**Runs on:** both. **Exports:** `CURRENCY_SYMBOL`, `PRO_PRICE`, `PRO_TRIAL_DAYS`, `FREE_FEATURES`, `PRO_FEATURES`, `formatPrice()`, `yearlySaving()`.
+
+**Depends on (imports):** none.
+
+**Used by (imported by):** `src/features/marketing/components/pricing-plans.tsx`.
+
+**Security notes:** none.
+
+#### `src/features/marketing/components/section-intro.tsx`
+
+**What it does:** `Tag`, the small green pill (Figma "Tag" / "Badge"), and `SectionIntro`, a centred tag + `<h2>` + subtitle.
+
+**Runs on:** both. **Exports:** `Tag`, `SectionIntro`.
+
+**Used by (imported by):** `hero.tsx` (`Tag`), `features.tsx` (`Tag`), `how-it-works.tsx`, `pricing.tsx`.
+
+**Security notes:** none.
+
+#### `src/features/marketing/components/hero.tsx`
+
+**What it does:** Badge, the page's only `<h1>` ("Smart insights for smarter spending"), a subtitle, **Get started free** (→ `/signup`) and **See how it works** (→ `#how-it-works`), then a browser-style preview of four example stat cards captioned "Example data".
+
+**Runs on:** server. **Exports:** `Hero`.
+
+**Depends on (imports):** `@/components/ui/button`, `./section-intro`.
+
+**Used by (imported by):** `src/app/(marketing)/page.tsx`.
+
+**Security notes:** none.
+
+**Notes:** "receive personalised AI advice" became "personalised AI budgeting insights" (FCA). The mobile frame's line "Join thousands already in control of their finances" was left out as an unsupported claim.
+
+#### `src/features/marketing/components/features.tsx`
+
+**What it does:** "Everything you need to understand your finances", then three alternating rows (Import, Categorise, AI Insights), each with a tag, `<h3>`, description, ✓ points and an illustrated preview built in code (dropzone + uploaded file, a transactions list with category badges, two insight cards).
+
+**Runs on:** server. **Exports:** `Features`.
+
+**Depends on (imports):** `./section-intro` (`Tag`).
+
+**Used by (imported by):** `src/app/(marketing)/page.tsx`.
+
+**Security notes:** none.
+
+**Notes:**
+- The third row's Figma copy "Personalised advice… Your personal financial advisor" became "Personalised insights… like having an AI money coach" (FCA). Its desktop tag said "Import" (a copy-paste slip), so the mobile frame's "AI Insights" is used.
+- The previews are `aria-hidden`: they're pictures of the product with example data, and the text beside each one says what it shows.
+
+#### `src/features/marketing/components/how-it-works.tsx`
+
+**What it does:** The `#how-it-works` section: three numbered steps (Upload, Categorise, Get insights) in a column on phones and three columns on wider screens.
+
+**Runs on:** server. **Exports:** `HowItWorks`.
+
+**Depends on (imports):** `./section-intro`.
+
+**Used by (imported by):** `src/app/(marketing)/page.tsx`.
+
+**Security notes:** none.
+
+**Notes:** fixed the Figma typo "financial clarify" → "clarity". Step 3's "Receive personalised AI advice" became "Get personalised AI insights" (FCA). The desktop frame's three vector icons couldn't be exported (the Figma connector hit its plan limit during B6), so the mobile frame's glyphs (↑ ⊞ ✦) are used at both sizes.
+
+#### `src/features/marketing/components/pricing.tsx` and `pricing-plans.tsx`
+
+**What they do:** `pricing.tsx` is the `#pricing` section wrapper and heading. `pricing-plans.tsx` is the interactive part: a Monthly/Annual switch (two native radio buttons styled as a segmented control; defaults to monthly) and two plan cards. **Free** (£0.00, forever) lists the free features. **Pro** has a "7-day free trial" badge, a green border, the price for the chosen period and "Everything in Free + AI money coach chat". Both buttons go to `/signup` (there's no checkout yet).
+
+**Runs on:** `pricing.tsx` on the server; `pricing-plans.tsx` in the browser too (`"use client"`, for the switch).
+
+**Exports:** `Pricing`; `PricingPlans`.
+
+**Depends on (imports):** `pricing.tsx` → `./pricing-plans`, `./section-intro`. `pricing-plans.tsx` → `@/components/ui/button`, `../pricing`; packages `react`.
+
+**Used by (imported by):** `src/app/(marketing)/page.tsx` (`Pricing`); `pricing.tsx` (`PricingPlans`).
+
+**Security notes:** none.
+
+**Notes:** there was no Figma frame; this was designed in code from the landing page's components. The price uses `aria-live="polite"`, so screen readers hear the change when the switch flips. Tested: £4.99 per month ↔ £49.99 per year.
+
+#### `src/features/marketing/components/cta.tsx`
+
+**What it does:** The green banner "Ready to take control of your finances?" with **Create your free account** (→ `/signup`; label from the mobile frame).
+
+**Runs on:** server. **Exports:** `Cta`.
+
+**Depends on (imports):** `@/components/ui/button`.
+
+**Used by (imported by):** `src/app/(marketing)/page.tsx`.
+
+**Security notes:** none.
+
+#### `src/features/marketing/components/site-footer.tsx`
+
+**What it does:** Logo, footer links (Privacy Policy, Terms, Contact) and the regulatory note: "SpendSense provides general information and budgeting insights, not regulated financial advice. For free, impartial guidance, visit MoneyHelper", linking to `https://www.moneyhelper.org.uk` in a new tab (with `rel="noopener noreferrer"` and a screen-reader note that it opens a new tab).
+
+**Runs on:** server. **Exports:** `SiteFooter`.
+
+**Depends on (imports):** `@/components/layout/logo`; packages `next/link`.
+
+**Used by (imported by):** `src/app/(marketing)/layout.tsx`.
+
+**Security notes:** `noopener` stops the opened site from controlling this tab.
+
+**Notes:** Privacy, Terms and Contact link to `#` because those pages don't exist yet.
+
+### Images (`public/images/auth/`)
+
+**What they are:** `padlock.svg`, `email-open.svg` and `tick.svg` were exported from the Figma "Forgot password" frames (65px green circles with their drop shadow baked in). `google-g.svg` is Google's official "G" mark, required by Google's branding guidelines; it isn't in the Figma file.
+
+**Used by:** `src/features/auth/components/auth-centered-card.tsx` (the three icons), `signup-form.tsx` (`email-open.svg` on the success view), `google-button.tsx` (`google-g.svg`).
+
+**Security notes:** none. They're static files served as-is, and all are decorative (`alt=""`).
