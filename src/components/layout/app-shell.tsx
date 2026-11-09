@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Logo } from "./logo";
+import { ThemeToggle } from "./theme-toggle";
 
 /** Sidebar links (Figma "Sidebar"; Budgets comes from the mobile drawer frame). */
 const MAIN_NAV = [
@@ -125,6 +126,8 @@ export function AppShell({ user, signOut, children }: AppShellProps) {
 
           <div className="mt-auto flex flex-col gap-2 border-t border-border pt-3">
             <NavLink {...SETTINGS} active={isActive(SETTINGS.match)} />
+            {/* Figma "◐ Theme" row */}
+            <ThemeToggle variant="row" />
             {signOut}
           </div>
         </nav>

@@ -40,6 +40,7 @@
 
 /* ---------- Semantic colours: light (from Figma) ---------- */
 :root {
+  color-scheme: light; /* native controls and scrollbars */
   --background: #f5f7f6;
   --foreground: #1a1a1a;
   --heading: #0d4a2e;
@@ -60,6 +61,11 @@
 
 /* ---------- Semantic colours: dark ---------- */
 .dark {
+  color-scheme: dark; /* native controls and scrollbars */
+  /* Contrast: brand-600 on dark cards is only ~2.6:1, so dark mode uses
+     brand-400 (~4.8:1 on cards) with dark text on green buttons (~6:1). */
+  --primary: #48a872;
+  --primary-foreground: #071210;
   --background: #1a1a1a;
   --card: #2a2a2a;
   --sidebar: #071210;

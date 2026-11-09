@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Logo } from "./logo";
 import { HeaderMenu } from "./header-menu";
+import { ThemeToggle } from "./theme-toggle";
 
 type SiteHeaderProps = {
   /**
@@ -17,7 +18,11 @@ export function SiteHeader({ actions }: SiteHeaderProps) {
     <header className="sticky top-0 z-20 bg-card shadow-card">
       <div className="relative mx-auto flex h-14 max-w-[1150px] items-center justify-between px-4 sm:h-21 sm:px-6">
         <Logo />
-        <HeaderMenu>{actions}</HeaderMenu>
+        <div className="flex items-center gap-2 sm:gap-5">
+          {/* Outside the mobile menu, so it's always one tap away */}
+          <ThemeToggle />
+          <HeaderMenu>{actions}</HeaderMenu>
+        </div>
       </div>
     </header>
   );

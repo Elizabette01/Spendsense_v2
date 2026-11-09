@@ -17,7 +17,8 @@ const base =
   "disabled:cursor-not-allowed disabled:opacity-60";
 
 const variants: Record<Variant, string> = {
-  primary: "bg-primary text-primary-foreground hover:bg-brand-800",
+  // Dark mode hovers lighter, because its button text is dark
+  primary: "bg-primary text-primary-foreground hover:bg-brand-800 dark:hover:bg-brand-300",
   // Figma "Button/Secondary": green outline on a light surface
   secondary: "border border-primary bg-card text-primary hover:bg-accent",
   // Border uses foreground-subtle so the button edge meets 3:1 contrast

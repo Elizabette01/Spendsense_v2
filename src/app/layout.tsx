@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { THEME_SCRIPT } from "@/components/layout/theme-script";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -18,7 +19,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       className={`${inter.variable} h-full antialiased`}
+      // The theme script below adds "dark" before React hydrates
+      suppressHydrationWarning
     >
+      <head>
+        {/* Applies the saved or system colour theme before the first paint */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );
