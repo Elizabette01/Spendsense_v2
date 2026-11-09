@@ -817,7 +817,7 @@ These are the page frames used by more than one area. They never import from `fe
 - "Settings" links to `/settings/password` for now, because there's no `/settings` page yet. It's highlighted on any `/settings/*` URL.
 - Budgets is in the list because the mobile frame shows it (the desktop frame doesn't).
 - Icons are the text glyphs from the design, with `\uFE0E` added to ask for text rather than emoji style. On Windows the "↑" may still render blue, which is only cosmetic.
-- Links to `/transactions`, `/recurring`, `/imports`, `/insights` and `/budgets` show a 404 until those pages exist.
+- `/transactions`, `/recurring`, `/imports`, `/insights` and `/budgets` currently render `PagePlaceholder`. (They used to 404, which dropped the sidebar and so lost the current-page highlight.)
 
 #### `src/components/layout/theme-script.ts`
 
@@ -852,6 +852,20 @@ These are the page frames used by more than one area. They never import from `fe
 **Notes:**
 - The icon and the switch position come from CSS `dark:` classes, so they're right from the first paint. The accessible label ("Switch to dark mode" / "Switch to light mode") and the row's `aria-checked` come from `useSyncExternalStore`, which watches the `<html>` class. The server can't know the visitor's theme, so it assumes light, and React swaps in the real value right after hydration without a mismatch error.
 - `useLayoutEffect` re-applies the theme on mount, because in development React re-mounts `<html>` and drops the class the inline script set (also from the Next.js guide). It's a no-op in production.
+
+#### `src/components/layout/page-placeholder.tsx`
+
+**What it does:** A "Coming soon" page body (title, subtitle, and a card) for app sections that aren't built yet. Because each section has a real page inside the `(app)` layout, the sidebar stays visible and highlights the current section, instead of the user dropping onto a plain 404.
+
+**Runs on:** server. **Exports:** `PagePlaceholder({ title, description })`.
+
+**Depends on (imports):** `@/components/ui/card`.
+
+**Used by (imported by):** `src/app/(app)/transactions/page.tsx`, `recurring/page.tsx`, `imports/page.tsx`, `insights/page.tsx`, `budgets/page.tsx`. Titles come from the Figma page frames. The Insights frame is called "AI Advisor", so its subtitle says "AI money coach" instead (FCA copy rule).
+
+**Security notes:** none. The pages read no user data, and the proxy and `RequireSession` keep signed-out visitors out.
+
+**Notes:** replace each page's body when its feature is built; `PagePlaceholder` can be deleted once nothing uses it.
 
 ### Auth components (`src/features/auth/components/`)
 
