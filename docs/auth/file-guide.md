@@ -237,3 +237,32 @@ This guide is a map of every file that takes part in signing users up, signing t
 **Security notes:** the 128 maximum stops very long inputs being used to make Argon2 do expensive work. Normalising before hashing means a password typed on a different keyboard or OS still verifies. There are deliberately no composition rules (following current NIST guidance).
 
 **Notes:** this is why the UI never puts `minLength`/`maxLength` on password inputs: the browser counts UTF-16 units and doesn't normalise, so it could disagree with the server.
+
+### `src/lib/password.ts`
+
+**What it does:** Everything that touches a real password on the server. It hashes and verifies with Argon2id (19 MiB memory, 2 iterations, 1 thread: the OWASP minimum), tells you when an old hash should be upgraded to the current settings, runs a "dummy" verification so unknown emails take as long as real ones, and checks Have I Been Pwned to see whether a password has appeared in a data breach.
+
+**Runs on:** server only (`import "server-only"`).
+
+**Exports:**
+- `hashPassword(password)`: normalise, then Argon2id hash.
+- `verifyPassword(hash, password)`: normalise, then verify; returns `false` (never throws) on a malformed hash.
+- `needsRehash(hash)`: `true` if the hash was made with different Argon2 settings.
+- `verifyAgainstDummy(password)`: verifies against a fixed dummy hash (created once, then cached) and always returns `false`.
+- `isPwnedPassword(password)`: HIBP range check.
+
+**Depends on (imports):**
+- Internal: `@/lib/password-rules` (`normalizePassword`).
+- Packages: `server-only`, `argon2` (native hashing), `node:crypto` (SHA-1 for the HIBP lookup).
+- Environment variables read: none.
+
+**Used by (imported by):**
+- `src/features/auth/credentials.ts` (verify, dummy verify, rehash)
+- `src/features/auth/actions/register.ts`, `password-reset.ts`, `change-password.ts` (hash, HIBP check; change-password also verifies)
+
+**Security notes:**
+- **k-anonymity:** only the first 5 characters of the password's SHA-1 are sent to HIBP; the matching happens locally. `Add-Padding: true` makes every response a similar size, so network observers can't guess which prefix was asked about. Padding lines have a count of 0, which the `> 0` check ignores.
+- **Fails open:** if HIBP is slow (3-second timeout) or down, the check returns `false` and the password is accepted, so an outside service can't block sign-ups. It logs a warning without the password.
+- **Timing:** `verifyAgainstDummy` makes "no such user" cost the same Argon2 work as "wrong password", so response time doesn't reveal which emails have accounts.
+
+**Notes:** the dummy hash is made lazily on first use, so the very first unknown-email sign-in after a server start is slower (two Argon2 operations).
