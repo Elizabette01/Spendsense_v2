@@ -168,8 +168,11 @@ function InsightsPreview() {
     <PreviewFrame>
       <p className="mb-4 text-card-title text-heading">AI insights</p>
       <div className="flex flex-col gap-2.5">
-        <div className="rounded-control bg-coral-light px-4 py-3">
-          <p className="text-nav font-semibold text-coral-strong">Spending alert</p>
+        {/* coral-light is a fixed colour, so dark mode needs its own tint */}
+        <div className="rounded-control bg-coral-light px-4 py-3 dark:bg-coral-strong/25">
+          <p className="text-nav font-semibold text-coral-strong dark:text-coral-light">
+            Spending alert
+          </p>
           <p className="text-nav text-foreground-secondary">
             Grocery spending increased 23%. Meal planning could save £45/month.
           </p>
