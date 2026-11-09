@@ -508,3 +508,143 @@ The B6 test "`/login?callbackUrl=//evil.com` → sign in → lands on `/dashboar
 **Notes:**
 - The session is read *before* `after()` because cookies and headers aren't available inside `after()` in a server component.
 - In B6, the two new components that call `auth()` (`header-auth-actions.tsx`, `sidebar-user.tsx`) needed `await connection()` first: in development, Next flagged Auth.js's use of `crypto` while prerendering. `ActivityTracker` didn't trigger that warning in testing, so it was left as it is. If the warning ever appears on app pages, the same one-line fix applies here.
+
+### Server actions (`src/features/auth/actions/`)
+
+All six files start with `"use server"`, so every exported async function is a **server action**: a function the browser can call by submitting a form, which runs only on the server. Treat each one as a public API endpoint, because anyone can call it with any input. That's why each one validates, rate-limits and (where relevant) checks `auth()` itself.
+
+There are two styles:
+- **State-returning** (`register`, `signInWithPassword`, `changePassword`) return an object such as `{ status: "error", message, fieldErrors }` that a client component reads with `useActionState`.
+- **Redirecting** (`verifyEmail`, `resendVerification`, `requestPasswordReset`, `resetPassword`, `signInWithGoogle`, `signOutAction`) end with `redirect()` to a URL with `?status=` or `?error=`, and the page reads that. These work without JavaScript.
+
+#### `actions/register.ts`
+
+**What it does:** Creates a password account. Steps: rate-limit by IP → validate (`registerSchema`) → reject breached passwords → hash (always, so every path takes a similar time) → then one of three branches: a **new email** creates the user and a `SIGN_UP` event in one transaction, then emails a verification link; an **existing unverified** account is updated with the new name and password and sent a fresh link ("newest registration wins"); an **existing verified** account isn't changed, and its owner gets the "you already have an account" email. All three return `{ status: "success" }`.
+
+**Runs on:** server only (`"use server"`).
+
+**Exports:** `register(prevState, formData)`, type `RegisterState`.
+
+**Depends on (imports):**
+- Internal: `@/lib/db`, `@/lib/rate-limit`, `@/lib/password`, `@/lib/tokens`, `@/lib/email`, `@/lib/request`, `../schemas`, `@/generated/prisma/client` (the `Prisma` error class).
+- Packages: `zod`.
+- Environment variables read: none directly.
+
+**Used by (imported by):** `src/features/auth/components/signup-form.tsx`.
+
+**Form fields:** `firstName`, `lastName`, `email`, `password`. (`acceptTerms` is sent by the form but not read; see Notes.)
+
+**Security notes:** the success response is identical on every path (anti-enumeration). A race where two people register the same email at once (a `P2002` unique-constraint error) also returns success. Breached passwords are refused before anything is stored.
+
+**Notes:**
+- Emails are sent *during* the request, not in `after()`. If sending fails, the user sees "Something went wrong…", even though the account row may already exist (unverified). They can recover with the resend form on `/verify-email`. The three branches also do different amounts of work (create + token + email vs. email only), so timing isn't perfectly uniform. Moving the email work into `after()`, as `requestPasswordReset` does, would fix both.
+- The sign-up form's Terms checkbox (`acceptTerms`) is UI-only for now. The handoff lists the backend follow-up.
+- Changed in B6 (approved): reads `firstName` and `lastName` and stores `"First Last"`.
+
+#### `actions/sign-in.ts`
+
+**What it does:** Two actions. `signInWithPassword` calls `signIn("credentials", …)` with the email, password and a `redirectTo` from `safeCallbackUrl(formData.get("callbackUrl"))`. On failure it turns Auth.js errors into fixed messages:
+- `email_not_verified` → "Please verify your email first…"
+- `rate_limited` → "Too many attempts…"
+- any other credentials failure → "Email or password is incorrect."
+- other Auth.js errors → "Something went wrong."
+
+`signInWithGoogle` starts the Google OAuth flow with the same safe `redirectTo`.
+
+**Runs on:** server only (`"use server"`).
+
+**Exports:** `signInWithPassword(prevState, formData)`, `signInWithGoogle(formData)`, type `SignInState`.
+
+**Depends on (imports):**
+- Internal: `@/auth` (`signIn`), `../redirect` (`safeCallbackUrl`).
+- Packages: `next-auth` (`AuthError`, `CredentialsSignin`).
+- Environment variables read: none.
+
+**Used by (imported by):** `src/features/auth/components/login-form.tsx` (`signInWithPassword`), `src/features/auth/components/google-button.tsx` (`signInWithGoogle`).
+
+**Form fields:** `email`, `password`, hidden `callbackUrl`.
+
+**Security notes:** non-Auth.js errors are re-thrown. That matters because a successful `signIn()` "fails" by throwing Next's redirect, and swallowing it would break sign-in. Messages come only from a fixed list.
+
+**Notes:** the final `return { status: "idle" }` is never reached in practice, because success always throws the redirect.
+
+#### `actions/sign-out.ts`
+
+**What it does:** `signOutAction()` calls `signOut({ redirectTo: "/" })`, which clears the session cookie and sends the user to the landing page.
+
+**Runs on:** server only (`"use server"`).
+
+**Exports:** `signOutAction()`.
+
+**Depends on (imports):**
+- Internal: `@/auth` (`signOut`).
+- Packages: none directly. Environment variables read: none.
+
+**Used by (imported by):** `src/features/auth/components/header-auth-actions.tsx` (navbar "Sign out"), `src/features/auth/components/sign-out-button.tsx` (sidebar "Log out").
+
+**Security notes:** this signs out only *this* browser (it clears the cookie). Signing out everywhere happens by bumping `sessionVersion` (reset and change password).
+
+#### `actions/verify-email.ts`
+
+**What it does:**
+- `verifyEmail` takes the hidden `token`, consumes it, sets `emailVerified` (only if it's still empty) and redirects to `?status=verified`. A bad or used token redirects to `?status=invalid`.
+- `resendVerification` takes an `email` and rate-limits by email and IP. Then, **after the response**, it creates and sends a new link, but only if that email belongs to an unverified password account. It always redirects to `?status=sent` (or `invalid-email` / `limited`).
+
+**Runs on:** server only (`"use server"`).
+
+**Exports:** `verifyEmail(formData)`, `resendVerification(formData)`.
+
+**Depends on (imports):**
+- Internal: `@/lib/db`, `@/lib/tokens`, `@/lib/email`, `@/lib/rate-limit`, `@/lib/request`, `../schemas`.
+- Packages: `next/server` (`after`), `next/navigation` (`redirect`).
+- Environment variables read: none directly.
+
+**Used by (imported by):** `src/app/(auth)/verify-email/page.tsx`.
+
+**Security notes:** opening the link does nothing; only pressing **Confirm my email** (a POST) verifies. That stops email scanners that pre-open links from using up the token (tested in B6: the database was unchanged until the button was pressed). The resend response is identical whether or not the account exists, and the per-account work happens in `after()`, so timing doesn't differ either.
+
+#### `actions/password-reset.ts`
+
+**What it does:**
+- `requestPasswordReset` validates the email and rate-limits by email and IP. Then, **after the response**, it creates a reset token and emails it if the account exists. It always redirects to `?status=sent`.
+- `resetPassword` checks the token's format, rate-limits by IP, validates the new password and checks HIBP, and hashes it, all **before** consuming the token. Then, in one transaction, it saves the hash, increments `sessionVersion`, marks the email verified if it wasn't, and deletes all the user's tokens. It sends the "password changed" notice in `after()` and redirects to `?status=done`.
+
+**Runs on:** server only (`"use server"`).
+
+**Exports:** `requestPasswordReset(formData)`, `resetPassword(formData)`.
+
+**Depends on (imports):**
+- Internal: `@/lib/db`, `@/lib/tokens`, `@/lib/email`, `@/lib/password`, `@/lib/rate-limit`, `@/lib/request`, `../schemas`.
+- Packages: `next/server` (`after`), `next/navigation` (`redirect`).
+- Environment variables read: none directly.
+
+**Used by (imported by):** `src/app/(auth)/forgot-password/page.tsx` (`requestPasswordReset`), `src/app/(auth)/reset-password/page.tsx` (`resetPassword`).
+
+**Form fields:** `email`; then hidden `token` plus `password`.
+
+**Security notes:**
+- A weak or breached password sends the user back to the form with the **same token still valid** (`?token=…&error=length|pwned`). Tested in B6: both errors kept the form usable, and the token still worked afterwards.
+- Incrementing `sessionVersion` signs out every existing session. Deleting all tokens kills any other outstanding links.
+- A reused link is rejected (tested).
+- A reset also verifies the email, which rescues accounts that never clicked the verification link: receiving the reset email proves they own the inbox.
+
+**Notes:** a `limited` redirect drops the token from the URL, so the user has to reopen the email link, as the page's copy says.
+
+#### `actions/change-password.ts`
+
+**What it does:** For signed-in users. Steps: `auth()` (must be signed in) → rate-limit per user → validate current and new passwords → if the account is Google-only, explain that it has no password → verify the current password → refuse the same password → refuse a breached one → save the new hash and increment `sessionVersion` → send the notice in `after()` → `signOut({ redirectTo: "/login?status=password-changed" })`.
+
+**Runs on:** server only (`"use server"`).
+
+**Exports:** `changePassword(prevState, formData)`, type `ChangePasswordState`.
+
+**Depends on (imports):**
+- Internal: `@/auth` (`auth`, `signOut`), `@/lib/db`, `@/lib/email`, `@/lib/password`, `@/lib/rate-limit`, `../schemas`.
+- Packages: `zod`, `next/server` (`after`).
+- Environment variables read: none directly.
+
+**Used by (imported by):** `src/features/auth/components/change-password-form.tsx`.
+
+**Form fields:** `currentPassword`, `newPassword`.
+
+**Security notes:** the user id comes from the session, never the form. Requiring the current password stops someone at an unlocked computer from taking over the account. Every device, including this one, is signed out (tested in B6: the old session was rejected afterwards).
