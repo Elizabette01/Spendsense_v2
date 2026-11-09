@@ -29,8 +29,8 @@ export function AuthCenteredCard({ icon, title, description, children }: AuthCen
   const { src, size, inset } = ICONS[icon];
 
   return (
-    <div className="flex w-full max-w-[720px] flex-col items-center gap-7 py-6 text-center sm:min-h-[600px] sm:justify-center sm:rounded-[20px] sm:bg-card sm:px-12 sm:py-12 sm:shadow-card lg:min-h-[700px] lg:px-26">
-      <span className="relative size-[65px] shrink-0">
+    <div className="flex w-full max-w-180 flex-col items-center gap-7 py-6 text-center sm:min-h-150 sm:justify-center sm:rounded-[1.25rem] sm:bg-card sm:px-12 sm:py-12 sm:shadow-card lg:min-h-175 lg:px-26">
+      <span className="relative size-16.25 shrink-0">
         <Image
           src={src}
           alt=""
@@ -41,7 +41,7 @@ export function AuthCenteredCard({ icon, title, description, children }: AuthCen
         />
       </span>
 
-      <div className="flex max-w-[430px] flex-col gap-1">
+      <div className="flex max-w-107.5 flex-col gap-1">
         <h1 className="text-2xl font-medium text-foreground-secondary sm:text-4xl">{title}</h1>
         {description && (
           <div className="text-base leading-7 text-foreground-muted sm:text-lg">{description}</div>
@@ -49,7 +49,7 @@ export function AuthCenteredCard({ icon, title, description, children }: AuthCen
       </div>
 
       {children && (
-        <div className="flex w-full max-w-[512px] flex-col gap-6 text-left">{children}</div>
+        <div className="flex w-full max-w-128 flex-col gap-6 text-left">{children}</div>
       )}
     </div>
   );

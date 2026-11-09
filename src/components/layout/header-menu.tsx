@@ -27,15 +27,15 @@ export function HeaderMenu({ children }: { children: ReactNode }) {
     <>
       <button
         type="button"
-        className="flex size-8 flex-col items-center justify-center gap-[5px] rounded-control text-foreground focus-visible:outline-2 focus-visible:outline-primary sm:hidden"
+        className="flex size-8 flex-col items-center justify-center gap-1.25 rounded-control text-foreground focus-visible:outline-2 focus-visible:outline-primary sm:hidden"
         aria-expanded={open}
         aria-controls={menuId}
         aria-label={open ? "Close menu" : "Open menu"}
         onClick={() => setOpen((value) => !value)}
       >
-        <span aria-hidden="true" className="h-0.5 w-[18px] rounded-full bg-current" />
-        <span aria-hidden="true" className="h-0.5 w-[18px] rounded-full bg-current" />
-        <span aria-hidden="true" className="h-0.5 w-[18px] rounded-full bg-current" />
+        <span aria-hidden="true" className="h-0.5 w-4.5 rounded-full bg-current" />
+        <span aria-hidden="true" className="h-0.5 w-4.5 rounded-full bg-current" />
+        <span aria-hidden="true" className="h-0.5 w-4.5 rounded-full bg-current" />
       </button>
 
       {/* Clicking a link inside closes the mobile menu */}

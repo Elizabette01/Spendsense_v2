@@ -150,7 +150,7 @@ function CheckYourEmail() {
 
   return (
     <div className="flex flex-col items-center gap-7 text-center">
-      <span className="relative size-[65px] shrink-0">
+      <span className="relative size-16.25 shrink-0">
         <Image
           src="/images/auth/email-open.svg"
           alt=""
