@@ -101,3 +101,29 @@ This guide is a map of every file that takes part in signing users up, signing t
 **Notes:**
 - Because the `jwt` callback queries the database on every `auth()` call, each page view that reads the session costs one small query. That's the price of instant session revocation.
 - Credentials sign-ins don't go through `events.createUser`; `register` creates those users and their `SIGN_UP` event itself.
+
+### `src/proxy.ts`
+
+**What it does:** Next.js 16's "proxy" (the file that used to be called middleware). It runs before every page request and does redirects only: admin URLs return a plain 404 unless the token's role is `ADMIN`; signed-out visitors to protected app URLs go to `/login?callbackUrl=<where they were going>`; signed-in visitors to `/login` or `/signup` go to `/dashboard`. It uses its own Auth.js instance built from `authConfig` alone, so it never touches the database.
+
+**Runs on:** server, before routing (Next.js picks it up by file name; nothing imports it).
+
+**Exports:**
+- `proxy`: the request handler, wrapped in Auth.js's `auth()` so `req.auth` holds the decoded session token.
+- `config`: the `matcher`, which skips `/api`, `_next/static`, `_next/image`, the favicon and image files.
+
+**Depends on (imports):**
+- Internal: `@/auth.config` (the database-free settings).
+- Packages: `next-auth`, `next/server` (`NextResponse`).
+- Environment variables read: none directly (Auth.js reads `AUTH_SECRET` to decode the cookie).
+
+**Used by (imported by):** nobody imports it; Next.js runs it automatically.
+
+**Security notes:**
+- The admin check answers 404, not 403, so the admin area's existence isn't confirmed to outsiders.
+- The `callbackUrl` it adds is only a suggestion: the sign-in actions run it through `safeCallbackUrl()` before redirecting.
+- It does **not** check `sessionVersion` (that needs the database). A revoked token still gets past the proxy; the page's own `auth()` call then rejects it. That's why every page and action that touches user data must call `auth()` itself.
+
+**Notes:**
+- `PROTECTED_PREFIXES` is `["/dashboard", "/onboarding", "/settings"]`. The handoff says it covers "the seven app sections plus `/onboarding`", but `/transactions`, `/budgets`, `/imports`, `/insights` and `/recurring` aren't in the list. Those pages don't exist yet, so nothing is exposed today, but they'll need adding (or each page must handle signed-out visitors) before they're built.
+- `matches()` matches the exact path or `prefix/…`, so `/settingsx` isn't treated as `/settings`.
