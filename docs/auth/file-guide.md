@@ -1316,3 +1316,329 @@ The landing page has no auth logic of its own, but it's the front door to sign-u
 - `Account` stores Google's `access_token`, `refresh_token` and `id_token` in plain text (the Prisma adapter's standard schema). SpendSense doesn't use them after sign-in. If they're ever needed, consider encrypting them, or don't keep them at all.
 - `email` is optional (`String?`) because Auth.js's adapter schema allows providers without email. Every SpendSense sign-in method does supply one.
 - There's no `Session` table: sessions are JWTs in a cookie (`strategy: "jwt"`).
+
+---
+
+## How it all connects
+
+### 1. File dependency map
+
+Each arrow points from a file to a file it imports. Packages (Auth.js, Zod, Argon2…) are left out to keep it readable.
+
+```mermaid
+flowchart LR
+  subgraph Database
+    schema[(schema.prisma)]
+  end
+
+  subgraph Config
+    authconfig[auth.config.ts]
+    authts[auth.ts]
+    proxy[proxy.ts]
+    types[next-auth.d.ts]
+    route["api/auth/[...nextauth]"]
+    nextconfig[next.config.ts]
+  end
+
+  subgraph Library
+    db[db.ts]
+    pwrules[password-rules.ts]
+    password[password.ts]
+    ratelimit[rate-limit.ts]
+    tokens[tokens.ts]
+    email[email.ts]
+    request[request.ts]
+    activity[activity.ts]
+  end
+
+  subgraph Feature["Feature logic"]
+    schemas[schemas.ts]
+    redirect[redirect.ts]
+    credentials[credentials.ts]
+    tracker[activity-tracker.tsx]
+    aRegister[actions/register]
+    aSignIn[actions/sign-in]
+    aSignOut[actions/sign-out]
+    aVerify[actions/verify-email]
+    aReset[actions/password-reset]
+    aChange[actions/change-password]
+  end
+
+  subgraph UI
+    subgraph Shared["Shared UI and layout"]
+      uiButton[ui/button]
+      uiInput[ui/input]
+      uiField[ui/form-field]
+      uiAlert[ui/form-alert]
+      uiCard[ui/card]
+      logo[layout/logo]
+      siteHeader[layout/site-header]
+      headerMenu[layout/header-menu]
+      appShell[layout/app-shell]
+    end
+    subgraph AuthComponents["Auth components"]
+      splitCard[auth-split-card]
+      centeredCard[auth-centered-card]
+      backToLogin[back-to-login]
+      skeleton[form-skeleton]
+      submit[submit-button]
+      pwInput[password-input]
+      google[google-button]
+      loginForm[login-form]
+      signupForm[signup-form]
+      changeForm[change-password-form]
+      headerActions[header-auth-actions]
+      sidebarUser[sidebar-user]
+      signOutBtn[sign-out-button]
+    end
+    subgraph AuthPages["Auth pages"]
+      authLayout["(auth)/layout"]
+      pLogin[login/page]
+      pSignup[signup/page]
+      pForgot[forgot-password/page]
+      pReset[reset-password/page]
+      pVerify[verify-email/page]
+    end
+    subgraph App
+      appLayout["(app)/layout"]
+      pSettings[settings/password/page]
+    end
+    subgraph Landing
+      mLayout["(marketing)/layout"]
+      mPage["(marketing)/page"]
+      pricingTs[pricing.ts]
+      intro[section-intro]
+      hero[hero]
+      features[features]
+      how[how-it-works]
+      pricingSec[pricing]
+      plans[pricing-plans]
+      cta[cta]
+      footer[site-footer]
+    end
+  end
+
+  %% Config
+  authts --> authconfig & db & credentials
+  proxy --> authconfig
+  types --> schema
+  route --> authts
+
+  %% Library
+  db --> schema
+  password --> pwrules
+  ratelimit --> db
+  tokens --> db
+  activity --> db
+
+  %% Feature logic
+  schemas --> pwrules
+  credentials --> db & ratelimit & password & pwrules & request & schemas
+  tracker --> authts & activity
+  aRegister --> db & ratelimit & password & tokens & email & request & schemas
+  aSignIn --> authts & redirect
+  aSignOut --> authts
+  aVerify --> db & tokens & email & ratelimit & request & schemas
+  aReset --> db & tokens & email & password & ratelimit & request & schemas
+  aChange --> authts & db & email & password & ratelimit & schemas
+
+  %% Shared UI and layout
+  siteHeader --> logo & headerMenu
+  appShell --> logo
+
+  %% Auth components
+  splitCard --> logo
+  submit --> uiButton
+  pwInput --> uiInput
+  google --> aSignIn & submit
+  loginForm --> aSignIn & uiAlert & uiField & uiInput & pwInput & submit
+  signupForm --> aRegister & pwrules & uiButton & uiAlert & uiField & uiInput & splitCard & google & pwInput & submit
+  changeForm --> aChange & pwrules & uiAlert & uiField & pwInput & submit
+  headerActions --> authts & uiButton & aSignOut & submit
+  sidebarUser --> authts
+  signOutBtn --> aSignOut
+
+  %% Auth pages
+  authLayout --> siteHeader & headerActions
+  pLogin --> uiAlert & splitCard & skeleton & google & loginForm
+  pSignup --> splitCard & signupForm
+  pForgot --> aReset & uiField & uiInput & centeredCard & backToLogin & skeleton & submit
+  pReset --> aReset & pwrules & uiButton & uiField & centeredCard & backToLogin & skeleton & pwInput & submit
+  pVerify --> aVerify & uiButton & uiField & uiInput & centeredCard & backToLogin & skeleton & submit
+
+  %% App
+  appLayout --> appShell & tracker & sidebarUser & signOutBtn
+  pSettings --> uiCard & changeForm
+
+  %% Landing
+  mLayout --> siteHeader & headerActions & footer
+  mPage --> hero & features & how & pricingSec & cta
+  hero --> uiButton & intro
+  features --> intro
+  how --> intro
+  pricingSec --> plans & intro
+  plans --> uiButton & pricingTs
+  cta --> uiButton
+  footer --> logo
+```
+
+### 2. User journey
+
+```mermaid
+flowchart LR
+  landing["Landing page /"] -->|Get started| signup["/signup"]
+  landing -->|Log in| login["/login"]
+  signup -->|form submitted| check["Check your email<br/>(same page)"]
+  check -->|link in email| confirm["/verify-email?token=…<br/>Confirm my email"]
+  confirm -->|button pressed| verified["/verify-email?status=verified"]
+  verified -->|Log in| login
+  login -->|email + password| dashboard["/dashboard<br/>(or the callbackUrl page)"]
+
+  signup -->|Continue with Google| google["Google sign-in"]
+  login -->|Continue with Google| google
+  google -->|verified Google email| dashboard
+  google -.->|email already has a password| notLinked["/login?error=OAuthAccountNotLinked"]
+
+  login -->|Forgot password?| forgot["/forgot-password"]
+  forgot -->|email submitted| sent["?status=sent<br/>Check your email"]
+  sent -->|link in email| reset["/reset-password?token=…"]
+  reset -->|new password| done["?status=done<br/>Password changed"]
+  done -->|Log in now| login
+
+  dashboard -->|Settings| settings["/settings/password"]
+  settings -->|password changed| changed["/login?status=password-changed"]
+  dashboard -->|Log out| landing
+```
+
+### 3. Request flow: password sign-in
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as Browser
+  participant P as /login page (LoginForm)
+  participant A as signInWithPassword
+  participant S as signIn (auth.ts)
+  participant C as authorizeCredentials
+  participant R as rateLimit
+  participant D as Database
+  participant H as Argon2
+  participant J as jwt callback
+  U->>P: types email and password, presses Log in
+  P->>A: form data (email, password, callbackUrl)
+  A->>S: signIn("credentials", redirectTo = safeCallbackUrl(callbackUrl))
+  S->>C: credentials
+  C->>C: validate with Zod
+  C->>R: count attempt (per email and per IP)
+  R->>D: atomic upsert in rate_limits
+  alt over a limit
+    C-->>A: throw rate_limited
+    A-->>P: "Too many attempts…"
+  end
+  C->>D: find user by email
+  alt no user, or Google-only account
+    C->>H: verify against dummy hash (same timing)
+    C-->>A: null
+    A-->>P: "Email or password is incorrect."
+  else user has a password
+    C->>H: verifyPassword(hash, password)
+    alt wrong password
+      C-->>A: null
+      A-->>P: "Email or password is incorrect."
+    else email not verified
+      C-->>A: throw email_not_verified
+      A-->>P: "Please verify your email first…"
+    else correct
+      C-->>S: { id, name, email, role, sessionVersion }
+      S->>J: user (first call)
+      J-->>S: token with role and sessionVersion
+      S-->>U: Set-Cookie (encrypted JWT) + redirect to the safe callbackUrl (default /dashboard)
+    end
+  end
+```
+
+### 4. Request flow: visiting a protected page
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as Browser
+  participant X as proxy.ts
+  participant L as (app) layout and page
+  participant Au as auth()
+  participant J as jwt callback
+  participant D as Database
+  participant T as ActivityTracker
+  U->>X: GET /dashboard (with or without cookie)
+  X->>X: decode JWT cookie (no database)
+  alt no valid cookie
+    X-->>U: 307 redirect to /login?callbackUrl=%2Fdashboard
+  else cookie present
+    X->>L: continue to the page
+    L-->>U: static shell streams first
+    L->>Au: auth() inside Suspense (sidebar user, tracker)
+    Au->>J: existing token
+    J->>D: select role, sessionVersion where id = token.sub
+    alt user gone or sessionVersion changed
+      J-->>Au: null (signed out)
+    else matches
+      J-->>Au: token with fresh role
+      Au-->>L: session
+      L-->>U: streamed user name and email
+      L->>T: render ActivityTracker
+      T->>T: after(() => recordActivity(userId))
+      T->>D: after the response: set lastActiveAt + ACTIVE_DAY event (once per UTC day)
+    end
+  end
+```
+
+### 5. Request flow: password reset
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as Browser
+  participant F as /forgot-password
+  participant Q as requestPasswordReset
+  participant D as Database
+  participant M as Email (Resend)
+  participant RP as /reset-password
+  participant RS as resetPassword
+  participant HB as HIBP
+  U->>F: enters email
+  F->>Q: email
+  Q->>Q: validate, rate-limit (email + IP)
+  Q-->>U: redirect ?status=sent (always the same)
+  Note over Q,M: after() — runs once the response has gone
+  Q->>D: find user by email
+  opt account exists
+    Q->>D: createAuthToken (store SHA-256 only, delete older reset tokens)
+    Q->>M: send link /reset-password?token=…
+  end
+  U->>RP: opens link from email
+  RP-->>U: "Choose a new password" (hidden token)
+  U->>RS: token + new password
+  RS->>RS: check token format, rate-limit by IP
+  RS->>RS: validate 12–128 characters
+  alt too short or long
+    RS-->>U: back to form ?error=length (token still valid)
+  end
+  RS->>HB: k-anonymity range check
+  alt breached
+    RS-->>U: back to form ?error=pwned (token still valid)
+  end
+  RS->>RS: hash with Argon2id BEFORE using the token
+  RS->>D: consumeAuthToken (single use, race-safe)
+  alt invalid, used or expired
+    RS-->>U: redirect ?status=invalid
+  else valid
+    RS->>D: transaction: new hash, sessionVersion + 1, verify email, delete all tokens
+    Note over RS,M: after()
+    RS->>M: "Your password was changed" notice
+    RS-->>U: redirect ?status=done (every session signed out)
+  end
+```
+
+### Reading the diagrams
+
+In the **dependency map**, an arrow means "imports". Follow arrows from a page down to see everything it relies on, or look for arrows *into* a box to see who would be affected if you changed it (for example, `db.ts` and `auth.ts` have the most arrows in). The boxes group files by layer: config at the edge of the framework, the library underneath, feature logic in the middle, UI on top, and the database at the bottom. Nothing in **Library** or **Shared UI** points into a feature, which is the "shared code doesn't depend on features" rule. In the **user journey**, solid arrows are the normal paths and the dotted arrow is an error path. In the **sequence diagrams**, time runs top to bottom: solid arrows are calls, dashed arrows are replies, `alt` boxes show the different outcomes, and `Note … after()` marks work that happens after the browser already has its response.
