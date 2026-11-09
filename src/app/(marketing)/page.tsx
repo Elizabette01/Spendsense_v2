@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Features } from "@/features/marketing/components/features";
 import { Hero } from "@/features/marketing/components/hero";
 
 export const metadata: Metadata = {
@@ -12,6 +13,7 @@ export default function LandingPage() {
   return (
     <>
       <Hero />
+      <Features />
     </>
   );
 }
