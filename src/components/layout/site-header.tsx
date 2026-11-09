@@ -15,7 +15,9 @@ type SiteHeaderProps = {
 /** Top navbar shared by the landing page and the auth pages (Figma "Navbar"). */
 export function SiteHeader({ actions }: SiteHeaderProps) {
   return (
-    <header className="sticky top-0 z-20 bg-card shadow-card">
+    // Dark mode: a soft green glow, so the navbar stands apart from the
+    // equally dark hero section below it
+    <header className="sticky top-0 z-20 bg-card shadow-card dark:shadow-lg dark:shadow-brand-400/25">
       <div className="relative mx-auto flex h-14 max-w-[1150px] items-center justify-between px-4 sm:h-21 sm:px-6">
         <Logo />
         <div className="flex items-center gap-2 sm:gap-5">

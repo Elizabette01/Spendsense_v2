@@ -57,7 +57,7 @@ export function AppShell({ user, signOut, children }: AppShellProps) {
   return (
     <div className="flex min-h-full flex-1 flex-col lg:flex-row">
       {/* Mobile top bar */}
-      <div className="sticky top-0 z-20 flex h-14 items-center justify-between bg-sidebar px-4 shadow-card lg:hidden">
+      <div className="sticky top-0 z-20 flex h-14 items-center justify-between bg-sidebar px-4 shadow-card lg:hidden dark:shadow-lg dark:shadow-brand-400/25">
         <Logo />
         <button
           ref={menuButtonRef}
