@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { auth } from "@/auth";
 
@@ -14,6 +15,8 @@ export function SidebarUser() {
 }
 
 async function SidebarUserContent() {
+  // Request-time only: auth() uses crypto before reading the cookie (see header-auth-actions)
+  await connection();
   const session = await auth();
   const name = session?.user?.name ?? "";
   const email = session?.user?.email ?? "";

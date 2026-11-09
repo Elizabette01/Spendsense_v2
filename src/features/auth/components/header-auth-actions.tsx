@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { auth } from "@/auth";
 import { ButtonLink } from "@/components/ui/button";
@@ -18,6 +19,9 @@ export function HeaderAuthActions() {
 }
 
 async function AuthAwareActions() {
+  // Mark this as request-time first: auth() uses crypto before it reads the
+  // cookie, which Next otherwise flags while prerendering the static shell.
+  await connection();
   const session = await auth();
   if (!session?.user) return <SignedOutActions />;
 
