@@ -157,7 +157,8 @@ function NavLink({
       }`}
     >
       <span aria-hidden="true" className="w-4 text-center">
-        {icon}
+        {/* ︎ asks for the plain text glyph, not a coloured emoji (Windows) */}
+        {`${icon}︎`}
       </span>
       {label}
     </Link>
