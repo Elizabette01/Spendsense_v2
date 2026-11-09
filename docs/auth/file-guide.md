@@ -1283,3 +1283,36 @@ The landing page has no auth logic of its own, but it's the front door to sign-u
 **Used by:** `src/features/auth/components/auth-centered-card.tsx` (the three icons), `signup-form.tsx` (`email-open.svg` on the success view), `google-button.tsx` (`google-g.svg`).
 
 **Security notes:** none. They're static files served as-is, and all are decorative (`alt=""`).
+
+---
+
+## Database
+
+### Auth models in `prisma/schema.prisma`
+
+**What it does:** Defines the PostgreSQL tables that auth reads and writes. Model names are PascalCase in code and mapped to snake_case table names with `@@map`.
+
+| Model (table) | What it holds | Written by | Read by |
+|---|---|---|---|
+| `User` (`users`) | `email` (unique), `name`, `emailVerified`, `image`, `role` (`USER`/`ADMIN`), `passwordHash` (null for Google-only accounts), `sessionVersion` (starts at 0), `lastActiveAt` | `register`, `verifyEmail`, `resetPassword`, `changePassword`, `credentials.ts` (rehash), `auth.ts` (`createUser` event), the Prisma adapter, `recordActivity` | `credentials.ts`, `auth.ts` `jwt` callback, the actions |
+| `Account` (`accounts`) | One row per linked OAuth login (`provider` + `providerAccountId`, unique together), plus the provider's tokens | the Prisma adapter, on Google sign-in | the Prisma adapter |
+| `AuthToken` (`auth_tokens`) | `tokenHash` (unique), `type` (`EMAIL_VERIFICATION` / `PASSWORD_RESET`), `expiresAt`, `userId` | `src/lib/tokens.ts`, `resetPassword` (deletes all of a user's tokens) | `src/lib/tokens.ts` |
+| `RateLimit` (`rate_limits`) | `key` (e.g. `signin:email:<sha256>`), `count`, `resetAt` (timestamptz) | `src/lib/rate-limit.ts` (raw SQL upsert) | the same |
+| `ActivityEvent` (`activity_events`) | `type` (`SIGN_UP`, `ACTIVE_DAY`, `CHAT_MESSAGE`), `userId` (optional), `createdAt` | `register`, `auth.ts` `createUser` event, `recordActivity` | future admin analytics |
+
+**Runs on:** the database; the generated client (`src/generated/prisma`) is used through `src/lib/db.ts` on the server only.
+
+**Depends on:** the `DATABASE_URL` connection (see `prisma.config.ts`, which loads `.env.local`).
+
+**Used by:** every server file that imports `@/lib/db`; the `Role` and `AuthTokenType` types are also imported from `@/generated/prisma/client` by `src/types/next-auth.d.ts` and `src/lib/tokens.ts`.
+
+**Security notes:**
+- Passwords and tokens are stored only as hashes (Argon2id and SHA-256). Rate-limit keys hash emails and IPs.
+- `sessionVersion` is the "kill switch": incrementing it makes every existing JWT fail the `jwt` callback check.
+- Deleting a user cascades to their `Account` and `AuthToken` rows (`onDelete: Cascade`). Their `ActivityEvent` rows are kept with `userId` set to null (`onDelete: SetNull`), so analytics totals survive account deletion.
+- `@@unique([provider, providerAccountId])` stops one Google account being attached twice.
+
+**Notes:**
+- `Account` stores Google's `access_token`, `refresh_token` and `id_token` in plain text (the Prisma adapter's standard schema). SpendSense doesn't use them after sign-in. If they're ever needed, consider encrypting them, or don't keep them at all.
+- `email` is optional (`String?`) because Auth.js's adapter schema allows providers without email. Every SpendSense sign-in method does supply one.
+- There's no `Session` table: sessions are JWTs in a cookie (`strategy: "jwt"`).
