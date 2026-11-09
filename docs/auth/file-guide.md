@@ -212,3 +212,28 @@ This guide is a map of every file that takes part in signing users up, signing t
 **Security notes:** `server-only` guarantees database credentials and queries can never end up in browser JavaScript.
 
 **Notes:** during a build with no `DATABASE_URL`, the client is created with `connectionString: undefined`; any query at build time would then fail. That's fine today because nothing queries during prerendering (all `auth()` calls sit behind `<Suspense>` and `connection()`).
+
+### `src/lib/password-rules.ts`
+
+**What it does:** The single source of truth for the password length rule (12 to 128 characters) and the helpers that apply it. Passwords are first normalised with Unicode NFKC (so visually identical characters typed different ways count the same), then counted in code points (`[...value].length`), not UTF-16 units, so an emoji counts as one character.
+
+**Runs on:** both. It has no server-only imports, so client components can use the constants for helper text.
+
+**Exports:**
+- `PASSWORD_MIN_LENGTH` (12), `PASSWORD_MAX_LENGTH` (128): the limits.
+- `normalizePassword(password)`: NFKC normalisation.
+- `countCharacters(value)`: code-point count.
+- `isValidPasswordLength(password)`: normalise, count, check both limits.
+
+**Depends on (imports):**
+- Internal: none. Packages: none. Environment variables read: none.
+
+**Used by (imported by):**
+- `src/features/auth/schemas.ts` (`newPasswordSchema`, `existingPasswordSchema`)
+- `src/features/auth/credentials.ts` (rejects over-long passwords before hashing)
+- `src/lib/password.ts` (normalises before hashing and verifying)
+- UI helper text and error copy: `src/features/auth/components/signup-form.tsx`, `change-password-form.tsx`, `src/app/(auth)/reset-password/page.tsx`
+
+**Security notes:** the 128 maximum stops very long inputs being used to make Argon2 do expensive work. Normalising before hashing means a password typed on a different keyboard or OS still verifies. There are deliberately no composition rules (following current NIST guidance).
+
+**Notes:** this is why the UI never puts `minLength`/`maxLength` on password inputs: the browser counts UTF-16 units and doesn't normalise, so it could disagree with the server.
