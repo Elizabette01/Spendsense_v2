@@ -459,3 +459,29 @@ This guide is a map of every file that takes part in signing users up, signing t
 The B6 test "`/login?callbackUrl=//evil.com` → sign in → lands on `/dashboard`" passed in the browser.
 
 **Notes:** the UI never redirects using `callbackUrl` itself; it only passes it to the server in a hidden input.
+
+### `src/features/auth/credentials.ts`
+
+**What it does:** The `authorize` function behind email-and-password sign-in. Auth.js calls it with the submitted email and password, and it decides whether they're valid. Its steps run in a deliberate order: validate input → rate-limit by email and IP → look up the user → do the same password-hashing work whether or not the user exists → only after a correct password, say "verify your email first" if needed → upgrade an outdated hash → return just the fields the session needs.
+
+**Runs on:** server only (`import "server-only"`).
+
+**Exports:**
+- `authorizeCredentials(credentials)`: returns a `User` (`id`, `name`, `email`, `image`, `role`, `sessionVersion`) or `null`, or throws `CredentialsSignin` subclasses with the codes `email_not_verified` or `rate_limited`.
+
+**Depends on (imports):**
+- Internal: `@/lib/db`, `@/lib/rate-limit`, `@/lib/password`, `@/lib/password-rules`, `@/lib/request`, `./schemas` (`emailSchema`).
+- Packages: `server-only`, `next-auth` (`CredentialsSignin`, `User` type), `zod`.
+- Environment variables read: none.
+
+**Used by (imported by):**
+- `src/auth.ts` (the Credentials provider's `authorize`). It runs when `signInWithPassword` calls `signIn("credentials", …)`.
+
+**Security notes:**
+- **Enumeration:** unknown emails and Google-only accounts (no `passwordHash`) still run a full Argon2 verification against a dummy hash, then return `null`, so the response and its timing match "wrong password". The "verify your email first" message is only revealed *after* a correct password, so it leaks nothing to someone guessing.
+- **Rate limits** run before any lookup or hashing, so brute force is cheap to refuse.
+- **Over-long passwords** (more than 128 characters) are rejected before hashing.
+- **Rehash on sign-in:** if the Argon2 settings are ever raised, users are upgraded quietly the next time they sign in. A failed rehash is logged and doesn't block the sign-in.
+- Returns only what the session needs; `passwordHash` never leaves this function.
+
+**Notes:** `null` becomes a plain `CredentialsSignin` in `sign-in.ts`, which shows "Email or password is incorrect.". The two custom codes map to their own messages there.
