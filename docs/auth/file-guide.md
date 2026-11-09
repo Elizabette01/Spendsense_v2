@@ -816,3 +816,199 @@ These are the page frames used by more than one area. They never import from `fe
 - The Figma "Theme" toggle isn't built (dark-mode switching isn't in scope yet).
 - Icons are the text glyphs from the design, with `︎` added to ask for text rather than emoji style. On Windows the "↑" may still render blue, which is only cosmetic.
 - Links to `/transactions`, `/recurring`, `/imports`, `/insights` and `/budgets` show a 404 until those pages exist.
+
+### Auth components (`src/features/auth/components/`)
+
+UI used only by the auth feature. They import the server actions directly. Client components can do that, because importing a `"use server"` function gives the browser a reference to call, not the server code.
+
+#### `auth-split-card.tsx`
+
+**What it does:** The login and sign-up layout (Figma "Login-page" and "Signup-page"): a green panel on the left (logo, big line, supporting line, copyright) and the form on the right. Below the `lg` breakpoint the panel is hidden and the form sits at the top of the page, matching the mobile frames. Also exports `AuthHeading`, the "Welcome back" title plus subtitle.
+
+**Runs on:** server (no `"use client"`).
+
+**Exports:** `AuthSplitCard({ panelTitle, panelText, children })`, `AuthHeading({ title, children })`.
+
+**Depends on (imports):** `@/components/layout/logo`.
+
+**Used by (imported by):** `src/app/(auth)/login/page.tsx`, `signup/page.tsx`; `./signup-form.tsx` (`AuthHeading`).
+
+**Security notes:** none.
+
+**Notes:**
+- **Contrast fixes:** the Figma gradient starts at `brand-400`, where white text is only about 2.9:1. It starts at `brand-600` here. The supporting text uses `white/90` instead of Figma's 80% white.
+- The copyright year is fixed at 2026: reading the clock (`new Date()`) would stop the page shell being prerendered.
+
+#### `auth-centered-card.tsx`
+
+**What it does:** The single centred card with an icon on top (Figma "Forgot password - 1…4"). Used for every one-step screen: forgot password, reset password, verify email, and their success, limited and invalid states. It picks one of three Figma icons (`padlock`, `email`, `tick`).
+
+**Runs on:** server.
+
+**Exports:** `AuthCenteredCard({ icon, title, description, children })`, type `AuthIcon`.
+
+**Depends on (imports):** packages `next/image`; images in `public/images/auth/`.
+
+**Used by (imported by):** `src/app/(auth)/forgot-password/page.tsx`, `reset-password/page.tsx`, `verify-email/page.tsx`.
+
+**Security notes:** none.
+
+**Notes:** the Figma icons were exported with their drop shadow included, so each SVG is larger than the 65px circle you see. A negative `inset` lines the circle up with its slot, as in the design. The icons are decorative (`alt=""`); the heading carries the meaning.
+
+#### `back-to-login.tsx`
+
+**What it does:** The "← Back to log in" text link under one-step screens.
+
+**Runs on:** server. **Exports:** `BackToLogin`. **Depends on (imports):** packages `next/link`.
+
+**Used by (imported by):** `src/app/(auth)/forgot-password/page.tsx`, `reset-password/page.tsx`, `verify-email/page.tsx`.
+
+**Security notes:** none.
+
+#### `form-skeleton.tsx`
+
+**What it does:** Grey pulsing bars shown as the `<Suspense>` fallback while a page waits for its URL values (`searchParams`).
+
+**Runs on:** server. **Exports:** `FormSkeleton({ fields })`. **Depends on (imports):** none.
+
+**Used by (imported by):** `src/app/(auth)/login/page.tsx`, `forgot-password/page.tsx`, `reset-password/page.tsx`, `verify-email/page.tsx`.
+
+**Security notes:** none. Marked `aria-hidden` so screen readers skip it.
+
+#### `submit-button.tsx`
+
+**What it does:** A full-width submit button that disables itself and shows a spinner plus a pending label ("Logging in…") while its form is submitting. It reads the status with React's `useFormStatus()`, which works for any `<form action={…}>`, including the redirecting ones. Forms using `useActionState` can pass their own `pending` instead.
+
+**Runs on:** browser too (`"use client"`).
+
+**Exports:** `SubmitButton({ children, pendingLabel, variant, size, pending })`.
+
+**Depends on (imports):** `@/components/ui/button`; packages `react-dom` (`useFormStatus`).
+
+**Used by (imported by):** `./login-form.tsx`, `./signup-form.tsx`, `./change-password-form.tsx`, `./google-button.tsx`, `./header-auth-actions.tsx`; `src/app/(auth)/forgot-password/page.tsx`, `reset-password/page.tsx`, `verify-email/page.tsx`.
+
+**Security notes:** disabling while pending prevents accidental double submits (which would also burn rate-limit attempts).
+
+#### `password-input.tsx`
+
+**What it does:** A password field with a "Show"/"Hide" toggle inside it (Figma "Show" text). The toggle is a real `<button type="button">` with `aria-pressed` and the label "Show password".
+
+**Runs on:** browser too (`"use client"`; it holds the visible/hidden state).
+
+**Exports:** `PasswordInput` (requires `id` and `autoComplete`: `current-password` or `new-password`).
+
+**Depends on (imports):** `@/components/ui/input` (`inputStyles`).
+
+**Used by (imported by):** `./login-form.tsx`, `./signup-form.tsx`, `./change-password-form.tsx`; `src/app/(auth)/reset-password/page.tsx`.
+
+**Security notes:** no `minLength`/`maxLength` (the server's 12–128 rule counts differently from the browser), and pasting isn't blocked, so password managers work. The correct `autoComplete` value lets password managers save new passwords and fill existing ones.
+
+**Notes:** this toggle is why the Figma "Confirm password" box was dropped from the reset form, with Elizabette's agreement: you can see what you typed instead of typing it twice.
+
+#### `google-button.tsx`
+
+**What it does:** "Continue with Google": its own `<form action={signInWithGoogle}>` with a hidden `callbackUrl` when there is one. Also exports `OrDivider`, the "or continue with" line between the two sign-in methods.
+
+**Runs on:** server by default; it also works inside client components (it's rendered by `signup-form.tsx`).
+
+**Exports:** `GoogleButton({ callbackUrl })`, `OrDivider({ label })`.
+
+**Depends on (imports):** `../actions/sign-in` (`signInWithGoogle`), `./submit-button`; packages `next/image`; image `public/images/auth/google-g.svg`.
+
+**Used by (imported by):** `src/app/(auth)/login/page.tsx`, `./signup-form.tsx`.
+
+**Security notes:** `callbackUrl` travels only to the server, which validates it.
+
+**Notes:** the Figma buttons said just "Google" and "Apple". Apple sign-in was dropped, and Google's branding rules require the "G" mark, so this is a full-width "Continue with Google" button with Google's official logo.
+
+#### `login-form.tsx`
+
+**What it does:** The email-and-password form (Figma "Login-page"). It uses `useActionState(signInWithPassword)`, shows the server's message in a `FormAlert` and moves focus onto it after a failed attempt. The email is kept in React state so it survives React's automatic form reset after each submit. The password isn't kept.
+
+**Runs on:** browser too (`"use client"`).
+
+**Exports:** `LoginForm({ callbackUrl })`.
+
+**Depends on (imports):** `../actions/sign-in`, `@/components/ui/form-alert`, `form-field`, `input`, `./password-input`, `./submit-button`; packages `next/link`, `react`.
+
+**Used by (imported by):** `src/app/(auth)/login/page.tsx`.
+
+**Security notes:** shows the server's message unchanged, so "Email or password is incorrect." covers both unknown email and wrong password. Values live only in memory (no `localStorage`).
+
+#### `signup-form.tsx`
+
+**What it does:** The sign-up view (Figma "Signup-page"): heading, First and Last name side by side, email, password with the 12–128 helper text (built from the constants), the Terms checkbox, Create account, then Google. On `status: "success"` it swaps the whole view for "Check your email" (envelope icon, 24-hour expiry, spam tip, Back to log in) and moves focus to that heading. After an error, focus goes to the first field with an error, or else to the alert.
+
+**Runs on:** browser too (`"use client"`).
+
+**Exports:** `SignupForm`.
+
+**Depends on (imports):** `../actions/register`, `@/lib/password-rules`, `@/components/ui/button`, `form-alert`, `form-field`, `input`, `./auth-split-card` (`AuthHeading`), `./google-button`, `./password-input`, `./submit-button`; packages `next/image`, `next/link`, `react`.
+
+**Used by (imported by):** `src/app/(auth)/signup/page.tsx`.
+
+**Security notes:** the success view says the same thing whatever happened on the server (anti-enumeration).
+
+**Notes:**
+- The Terms checkbox is `required` in the browser only; the server doesn't record consent yet (see the handoff's "Still open"). Its Terms and Privacy links point to `#` until those pages exist.
+- The desktop Figma frame had no name fields and the mobile one used placeholders as labels. Both now have visible labels.
+
+#### `change-password-form.tsx`
+
+**What it does:** Current password + new password (with the 12–128 hint) and the warning "You'll be signed out on all devices, including this one…" before the button. It uses `useActionState(changePassword)`. On success the server redirects to `/login?status=password-changed`, so the form has no success state of its own.
+
+**Runs on:** browser too (`"use client"`).
+
+**Exports:** `ChangePasswordForm`.
+
+**Depends on (imports):** `../actions/change-password`, `@/lib/password-rules`, `@/components/ui/form-alert`, `form-field`, `./password-input`, `./submit-button`; packages `react`.
+
+**Used by (imported by):** `src/app/(app)/settings/password/page.tsx`.
+
+**Security notes:** the Google-only account message comes from the server and is shown as-is.
+
+#### `header-auth-actions.tsx`
+
+**What it does:** The navbar buttons that depend on who's signed in. Signed out: "Log in" and "Get started". Signed in: "Dashboard" and a "Sign out" form. The session read sits inside its own `<Suspense>`, so the rest of the page stays prerendered. The fallback shows the signed-out buttons (most visitors are signed out).
+
+**Runs on:** server (an async server component inside `<Suspense>`).
+
+**Exports:** `HeaderAuthActions`.
+
+**Depends on (imports):** `@/auth` (`auth`), `@/components/ui/button`, `../actions/sign-out`, `./submit-button`; packages `next/server` (`connection`), `react`.
+
+**Used by (imported by):** `src/app/(auth)/layout.tsx`, `src/app/(marketing)/layout.tsx`.
+
+**Security notes:** it only changes which buttons show; the proxy and pages enforce access.
+
+**Notes:** `await connection()` comes before `auth()`. Without it, in development Next flagged Auth.js's use of `crypto` while prerendering the landing page ("blocking-prerender-crypto"). This is why `/` builds as ◐ (partial prerender) rather than fully static, which Elizabette approved.
+
+#### `sidebar-user.tsx`
+
+**What it does:** The avatar initials, name and email at the top of the app sidebar, read from the session inside `<Suspense>` (with a pulsing placeholder).
+
+**Runs on:** server (an async server component).
+
+**Exports:** `SidebarUser`.
+
+**Depends on (imports):** `@/auth`; packages `next/server` (`connection`), `react`.
+
+**Used by (imported by):** `src/app/(app)/layout.tsx` (passed into `AppShell`'s `user` slot).
+
+**Security notes:** shows only the signed-in user's own name and email.
+
+**Notes:** initials come from the first and last words of the name ("Test User A" → "TA").
+
+#### `sign-out-button.tsx`
+
+**What it does:** The "→ Log out" item at the bottom of the app sidebar: a real `<form action={signOutAction}>`, so it works without JavaScript, with a pending label.
+
+**Runs on:** browser too (`"use client"`; it uses `useFormStatus`).
+
+**Exports:** `SignOutButton`.
+
+**Depends on (imports):** `../actions/sign-out`; packages `react-dom`.
+
+**Used by (imported by):** `src/app/(app)/layout.tsx` (passed into `AppShell`'s `signOut` slot).
+
+**Security notes:** sign-out is a POST (a form), not a link, so another site can't sign people out just by embedding a URL.
