@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Features } from "@/features/marketing/components/features";
 import { Hero } from "@/features/marketing/components/hero";
 import { HowItWorks } from "@/features/marketing/components/how-it-works";
+import { Pricing } from "@/features/marketing/components/pricing";
 
 export const metadata: Metadata = {
   title: "SpendSense · AI budgeting insights from your bank statements",
@@ -16,6 +17,7 @@ export default function LandingPage() {
       <Hero />
       <Features />
       <HowItWorks />
+      <Pricing />
     </>
   );
 }
