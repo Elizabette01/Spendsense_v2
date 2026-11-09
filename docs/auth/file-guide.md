@@ -1012,3 +1012,128 @@ UI used only by the auth feature. They import the server actions directly. Clien
 **Used by (imported by):** `src/app/(app)/layout.tsx` (passed into `AppShell`'s `signOut` slot).
 
 **Security notes:** sign-out is a POST (a form), not a link, so another site can't sign people out just by embedding a URL.
+
+### Auth pages (`src/app/(auth)/`)
+
+`(auth)` is a **route group**: the brackets organise files without adding to the URL, so `src/app/(auth)/login/page.tsx` is `/login`. Pages stay thin: they read the URL, pick a state and compose components from `features/auth/components`. Nothing imports a page; Next.js routes to it.
+
+**The Suspense pattern used by every page that reads the URL:** the page function itself isn't `async`. It passes the `searchParams` promise to an inner async component wrapped in `<Suspense>`. With Cache Components on, anything outside the boundary is prerendered into a static shell, and only the inner part waits for the request. Reading `searchParams` outside a boundary fails `next build`.
+
+**Shared security rule:** pages only show messages from fixed lists keyed by known `status`/`error` values. Raw URL text is never printed (tested with `?error=<script>…`, which shows the generic message).
+
+#### `src/app/(auth)/layout.tsx`
+
+**What it does:** Wraps all five auth pages in the `SiteHeader` (with the session-aware `HeaderAuthActions`) and a `<main>` that centres the card. On phones the page background is the card colour, so the form sits directly on the page, as in the mobile frames.
+
+**Runs on:** server. **Exports:** default `AuthLayout`.
+
+**Depends on (imports):** `@/components/layout/site-header`, `@/features/auth/components/header-auth-actions`.
+
+**Used by:** Next.js, for every route in `(auth)`.
+
+**Security notes:** none.
+
+#### `src/app/(auth)/login/page.tsx` → `/login`
+
+**What it does:** The split card with "Welcome back" in the static shell. Inside `<Suspense>` it reads `callbackUrl`, `error` and `status`, then shows:
+- `status=password-changed` → a success banner.
+- `error=OAuthAccountNotLinked` / `AccessDenied` / anything else → the matching fixed error banner.
+- Then `LoginForm` and the Google button, both given `callbackUrl` (only if it's a single string).
+
+**Runs on:** server. **Exports:** default page, `metadata` (title).
+
+**Depends on (imports):** `@/components/ui/form-alert`, `@/features/auth/components/auth-split-card`, `form-skeleton`, `google-button`, `login-form`; packages `next/link`, `react`.
+
+**Security notes:** `callbackUrl` is passed on unchanged; only the server actions decide whether it's safe. Signed-in visitors never see this page (the proxy sends them to `/dashboard`; tested).
+
+**Notes:** the panel's Figma copy "personalised financial advice" was changed to "personalised budgeting insights" (FCA wording).
+
+#### `src/app/(auth)/signup/page.tsx` → `/signup`
+
+**What it does:** The split card around `SignupForm`. It reads no request data, so the whole page is prerendered apart from the header buttons.
+
+**Runs on:** server. **Exports:** default page, `metadata`.
+
+**Depends on (imports):** `@/features/auth/components/auth-split-card`, `signup-form`.
+
+**Security notes:** none beyond the form's.
+
+**Notes:** the Figma panel line "Join thousands of users who've taken control…" was replaced with "Take control of your spending with clear insights and effortless tracking." There are no users yet, so the claim couldn't be supported.
+
+#### `src/app/(auth)/forgot-password/page.tsx` → `/forgot-password`
+
+**What it does:** Reads `status` inside `<Suspense>` and shows one of:
+- Default (Figma "Forgot password - 1"): padlock, "Reset password", email form posting to `requestPasswordReset`.
+- `invalid-email`: the same form with a field error, focus on the field.
+- `sent` (Figma "Forgot password - 2"): "Check your email" with the "If that email has a SpendSense account…" wording.
+- `limited` (no frame): "Too many requests".
+
+**Runs on:** server. **Exports:** default page, `metadata`.
+
+**Depends on (imports):** `@/features/auth/actions/password-reset`, `@/components/ui/form-field`, `input`, `@/features/auth/components/auth-centered-card`, `back-to-login`, `form-skeleton`, `submit-button`.
+
+**Security notes:** the `sent` wording never confirms the account exists. The form is a plain server-action form, so it works without JavaScript.
+
+**Notes:** the Figma "Open email app" button was replaced with "Back to log in", because a web page can't reliably open someone's email app.
+
+#### `src/app/(auth)/reset-password/page.tsx` → `/reset-password`
+
+**What it does:** Reads `token`, `status` and `error` inside `<Suspense>` and shows one of:
+- Token present, no status (Figma "Forgot password - 3"): "Choose a new password" with a hidden `token` and one `password` field. `error=length` or `error=pwned` shows a field error.
+- `done` (Figma "Forgot password - 4"): "Password changed… signed out on all devices" plus a **Log in now** link.
+- `limited` (no frame): "Too many attempts".
+- Anything else (no frame): "This link is invalid or has expired" plus **Request a new link**.
+
+**Runs on:** server. **Exports:** default page, `metadata`.
+
+**Depends on (imports):** `@/features/auth/actions/password-reset`, `@/lib/password-rules`, `@/components/ui/button`, `form-field`, `@/features/auth/components/auth-centered-card`, `back-to-login`, `form-skeleton`, `password-input`, `submit-button`.
+
+**Security notes:** the token stays in a hidden field and the URL. `next.config.ts` sends `Referrer-Policy: no-referrer` here so it doesn't leak to other sites.
+
+**Notes:**
+- B6 replaced the temporary inline `signIn()` server action with a plain `<Link href="/login">`.
+- Figma's "Confirm password" box and its "at least 8 characters" text were dropped (one box with a Show toggle, the 12–128 rule).
+- Before B6 this file was accidentally named `page.tsc`, so the route was a 404. Elizabette renamed it.
+
+#### `src/app/(auth)/verify-email/page.tsx` → `/verify-email`
+
+**What it does:** Reads `token` and `status` inside `<Suspense>`. None of these states has a Figma frame; all use the centred card:
+- Token present, no status: "Verify your email" plus **Confirm my email** (posts the hidden `token` to `verifyEmail`).
+- `verified`: "Email verified" plus a **Log in** link.
+- `sent`: "If that email has an account waiting to be verified, we've sent a new link…"
+- `limited`: "Too many requests".
+- Anything else: "This link is invalid or has expired" plus a resend form (`resendVerification`); `invalid-email` adds a field error.
+
+**Runs on:** server. **Exports:** default page, `metadata`.
+
+**Depends on (imports):** `@/features/auth/actions/verify-email`, `@/components/ui/button`, `form-field`, `input`, `@/features/auth/components/auth-centered-card`, `back-to-login`, `form-skeleton`, `submit-button`.
+
+**Security notes:** opening the link changes nothing; only the button does (tested). Also gets `Referrer-Policy: no-referrer`.
+
+**Notes:** B6 replaced the temporary `signIn()` form with a `<Link href="/login">`.
+
+### App area (`src/app/(app)/`)
+
+#### `src/app/(app)/layout.tsx`
+
+**What it does:** The layout for every signed-in page. It renders `AppShell`, filling its slots with `SidebarUser` and `SignOutButton`, and keeps the pre-existing `<Suspense fallback={null}><ActivityTracker /></Suspense>` block unchanged after it.
+
+**Runs on:** server. **Exports:** default `AppLayout`.
+
+**Depends on (imports):** `@/components/layout/app-shell`, `@/features/auth/activity-tracker`, `@/features/auth/components/sidebar-user`, `sign-out-button`; packages `react`.
+
+**Used by:** Next.js, for `/dashboard`, `/settings/password` and future app pages.
+
+**Security notes:** the layout doesn't decide access. The proxy redirects signed-out visitors, and every page and action must still call `auth()` itself.
+
+#### `src/app/(app)/settings/password/page.tsx` → `/settings/password`
+
+**What it does:** "Settings" page title, then a card titled "Change password" containing `ChangePasswordForm`. It follows the Settings frame's page header and "Profile" section card, because there's no change-password frame.
+
+**Runs on:** server. **Exports:** default page, `metadata`.
+
+**Depends on (imports):** `@/components/ui/card`, `@/features/auth/components/change-password-form`.
+
+**Security notes:** the page reads no user data, so it doesn't call `auth()`. The `changePassword` action does. `/settings` is in the proxy's protected list, so signed-out visitors are redirected to log in first.
+
+**Notes:** `src/app/(app)/dashboard/page.tsx` is still the placeholder heading, unchanged in B6.
