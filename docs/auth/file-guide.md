@@ -770,13 +770,13 @@ These are the page frames used by more than one area. They never import from `fe
 
 #### `src/components/layout/site-header.tsx`
 
-**What it does:** The sticky top navbar for the landing and auth pages: logo on the left, an `actions` slot on the right.
+**What it does:** The sticky top navbar for the landing and auth pages: logo on the left; on the right, the light/dark toggle (always visible, even on phones) and an `actions` slot.
 
-**Runs on:** server (no `"use client"`). It renders the client `HeaderMenu`.
+**Runs on:** server (no `"use client"`). It renders the client `HeaderMenu` and `ThemeToggle`.
 
 **Exports:** `SiteHeader({ actions })`.
 
-**Depends on (imports):** `./logo`, `./header-menu`.
+**Depends on (imports):** `./logo`, `./header-menu`, `./theme-toggle`.
 
 **Used by (imported by):** `src/app/(auth)/layout.tsx`, `src/app/(marketing)/layout.tsx` (both pass `<HeaderAuthActions />`).
 
@@ -800,13 +800,13 @@ These are the page frames used by more than one area. They never import from `fe
 
 #### `src/components/layout/app-shell.tsx`
 
-**What it does:** The signed-in app layout from the Figma Settings and "Mobile — Hamburger Menu" frames. On desktop (`lg`+) it's a fixed 280px sidebar with the logo, a `user` slot, the MAIN nav links, then Settings and a `signOut` slot at the bottom. On mobile there's a top bar with a hamburger, and the *same* sidebar element slides in as a drawer over a dimmed overlay. The current page's link is highlighted (`aria-current="page"`). It wraps the page in `<main>`.
+**What it does:** The signed-in app layout from the Figma Settings and "Mobile — Hamburger Menu" frames. On desktop (`lg`+) it's a fixed 280px sidebar with the logo, a `user` slot, the MAIN nav links, then Settings, the "Dark mode" switch (Figma "◐ Theme") and a `signOut` slot at the bottom. On mobile there's a top bar with a hamburger, and the *same* sidebar element slides in as a drawer over a dimmed overlay. The current page's link is highlighted (`aria-current="page"`). It wraps the page in `<main>`.
 
 **Runs on:** browser too (`"use client"`; it needs `usePathname()` and the drawer state).
 
 **Exports:** `AppShell({ user, signOut, children })`.
 
-**Depends on (imports):** `./logo`; packages `next/link`, `next/navigation` (`usePathname`), `react`.
+**Depends on (imports):** `./logo`, `./theme-toggle`; packages `next/link`, `next/navigation` (`usePathname`), `react`.
 
 **Used by (imported by):** `src/app/(app)/layout.tsx`.
 
@@ -816,9 +816,42 @@ These are the page frames used by more than one area. They never import from `fe
 - Opening the drawer moves focus to its close button. Escape or the close button returns focus to the hamburger (tested). When closed on mobile, the drawer is `invisible`, so it can't be tabbed into.
 - "Settings" links to `/settings/password` for now, because there's no `/settings` page yet. It's highlighted on any `/settings/*` URL.
 - Budgets is in the list because the mobile frame shows it (the desktop frame doesn't).
-- The Figma "Theme" toggle isn't built (dark-mode switching isn't in scope yet).
-- Icons are the text glyphs from the design, with `︎` added to ask for text rather than emoji style. On Windows the "↑" may still render blue, which is only cosmetic.
+- Icons are the text glyphs from the design, with `\uFE0E` added to ask for text rather than emoji style. On Windows the "↑" may still render blue, which is only cosmetic.
 - Links to `/transactions`, `/recurring`, `/imports`, `/insights` and `/budgets` show a 404 until those pages exist.
+
+#### `src/components/layout/theme-script.ts`
+
+**What it does:** Holds the tiny script that sets the colour theme before the page paints, and the `localStorage` key it uses. The script reads a saved choice (`"light"` or `"dark"`); if there's none, it follows the system setting (`prefers-color-scheme`). It then adds or removes the `dark` class on `<html>`, which switches every `dark:` style and the dark token values in `globals.css`.
+
+**Runs on:** the script runs in the browser, inline in `<head>`. The file itself is a plain module (no `"use client"`), so the server-rendered root layout can import the string.
+
+**Exports:** `THEME_SCRIPT` (the script as a string), `THEME_STORAGE_KEY` (`"theme"`).
+
+**Depends on (imports):** none.
+
+**Used by (imported by):** `src/app/layout.tsx` (renders it in `<head>`, with `suppressHydrationWarning` on `<html>` because the class changes before React hydrates), `./theme-toggle.tsx` (the key).
+
+**Security notes:** the script is a fixed string written in the code, never built from user input. `try/catch` covers browsers that block `localStorage`.
+
+**Notes:** this follows the Next.js guide "How to prevent flash before hydration". Without it, dark-mode visitors would see a white page for a moment on every load. Tested: the class is already set when HTML parsing finishes.
+
+#### `src/components/layout/theme-toggle.tsx`
+
+**What it does:** The light/dark switch, in two looks: a round sun/moon button for the navbar (`variant="icon"`), and the sidebar's "Dark mode" row with a switch (`variant="row"`). Toggling flips the `dark` class and saves the choice. If the new choice matches the system setting, it **removes** the saved choice instead, so the site goes back to following the system. While nothing is saved, it also follows live changes to the system setting.
+
+**Runs on:** browser too (`"use client"`).
+
+**Exports:** `ThemeToggle({ variant })`.
+
+**Depends on (imports):** `./theme-script` (`THEME_STORAGE_KEY`); packages `react` (`useSyncExternalStore`, `useLayoutEffect`).
+
+**Used by (imported by):** `src/components/layout/site-header.tsx`, `src/components/layout/app-shell.tsx`.
+
+**Security notes:** none. It only stores `"light"` or `"dark"`.
+
+**Notes:**
+- The icon and the switch position come from CSS `dark:` classes, so they're right from the first paint. The accessible label ("Switch to dark mode" / "Switch to light mode") and the row's `aria-checked` come from `useSyncExternalStore`, which watches the `<html>` class. The server can't know the visitor's theme, so it assumes light, and React swaps in the real value right after hydration without a mismatch error.
+- `useLayoutEffect` re-applies the theme on mount, because in development React re-mounts `<html>` and drops the class the inline script set (also from the Next.js guide). It's a no-op in production.
 
 ### Auth components (`src/features/auth/components/`)
 
@@ -826,13 +859,13 @@ UI used only by the auth feature. They import the server actions directly. Clien
 
 #### `auth-split-card.tsx`
 
-**What it does:** The login and sign-up layout (Figma "Login-page" and "Signup-page"): a green panel on the left (logo, big line, supporting line, copyright) and the form on the right. Below the `lg` breakpoint the panel is hidden and the form sits at the top of the page, matching the mobile frames. Also exports `AuthHeading`, the "Welcome back" title plus subtitle.
+**What it does:** The login and sign-up layout (Figma "Login-page" and "Signup-page"): a green panel on the left (logo, a **← Back to homepage** link, big line, supporting line, copyright) and the form on the right. Below the `lg` breakpoint the panel is hidden and the form sits at the top of the page, matching the mobile frames; the same back link then appears above the heading instead. Also exports `AuthHeading`, the "Welcome back" title plus subtitle.
 
 **Runs on:** server (no `"use client"`).
 
 **Exports:** `AuthSplitCard({ panelTitle, panelText, children })`, `AuthHeading({ title, children })`.
 
-**Depends on (imports):** `@/components/layout/logo`.
+**Depends on (imports):** `@/components/layout/logo`; packages `next/link`.
 
 **Used by (imported by):** `src/app/(auth)/login/page.tsx`, `signup/page.tsx`; `./signup-form.tsx` (`AuthHeading`).
 
@@ -1177,11 +1210,11 @@ The landing page has no auth logic of its own, but it's the front door to sign-u
 
 #### `src/app/(marketing)/page.tsx` → `/`
 
-**What it does:** Page metadata (title and description), then the sections in order: Hero, Features, How it works, Pricing, CTA. It reads no request data itself.
+**What it does:** Page metadata (title and description), then the sections in order: Hero, Features, How it works, Pricing, CTA, plus the floating back-to-top button. It reads no request data itself.
 
 **Runs on:** server. **Exports:** default `LandingPage`, `metadata`.
 
-**Depends on (imports):** `@/features/marketing/components/hero`, `features`, `how-it-works`, `pricing`, `cta`.
+**Depends on (imports):** `@/features/marketing/components/hero`, `features`, `how-it-works`, `pricing`, `cta`, `scroll-to-top`.
 
 **Security notes:** none.
 
@@ -1268,6 +1301,22 @@ The landing page has no auth logic of its own, but it's the front door to sign-u
 **Security notes:** none.
 
 **Notes:** there was no Figma frame; this was designed in code from the landing page's components. The price uses `aria-live="polite"`, so screen readers hear the change when the switch flips. Tested: £4.99 per month ↔ £49.99 per year.
+
+#### `src/features/marketing/components/scroll-to-top.tsx`
+
+**What it does:** A round green "Back to top" button fixed to the bottom-right of the landing page. It only appears after the visitor has scrolled 600px. Clicking it scrolls back to the top and moves keyboard focus to the first link in the header (the logo), so keyboard users aren't left at the bottom of the page.
+
+**Runs on:** browser too (`"use client"`; it listens to scrolling).
+
+**Exports:** `ScrollToTop`.
+
+**Depends on (imports):** packages `react`.
+
+**Used by (imported by):** `src/app/(marketing)/page.tsx`.
+
+**Security notes:** none.
+
+**Notes:** the button isn't rendered at all until it's needed, so there's never an invisible button you can tab to. The scroll is smooth unless the visitor's system asks for reduced motion (`prefers-reduced-motion`), in which case it jumps. It has `aria-label="Back to top"` because the arrow icon is decorative.
 
 #### `src/features/marketing/components/cta.tsx`
 
@@ -1394,6 +1443,9 @@ flowchart LR
       siteHeader[layout/site-header]
       headerMenu[layout/header-menu]
       appShell[layout/app-shell]
+      themeToggle[layout/theme-toggle]
+      themeScript[layout/theme-script]
+      rootLayout[app/layout root]
     end
     subgraph AuthComponents["Auth components"]
       splitCard[auth-split-card]
@@ -1435,6 +1487,7 @@ flowchart LR
       plans[pricing-plans]
       cta[cta]
       footer[site-footer]
+      scrollTop[scroll-to-top]
     end
   end
 
@@ -1463,8 +1516,10 @@ flowchart LR
   aChange --> authts & db & email & password & ratelimit & schemas
 
   %% Shared UI and layout
-  siteHeader --> logo & headerMenu
-  appShell --> logo
+  siteHeader --> logo & headerMenu & themeToggle
+  appShell --> logo & themeToggle
+  themeToggle --> themeScript
+  rootLayout --> themeScript
 
   %% Auth components
   splitCard --> logo
@@ -1493,7 +1548,7 @@ flowchart LR
 
   %% Landing
   mLayout --> siteHeader & headerActions & footer
-  mPage --> hero & features & how & pricingSec & cta
+  mPage --> hero & features & how & pricingSec & cta & scrollTop
   hero --> uiButton & intro
   features --> intro
   how --> intro
