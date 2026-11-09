@@ -10,7 +10,7 @@ import { sendAccountExistsEmail, sendVerificationEmail } from "@/lib/email";
 import { getClientIp } from "@/lib/request";
 import { registerSchema } from "../schemas";
 
-type RegisterField = "name" | "email" | "password";
+type RegisterField = "firstName" | "lastName" | "email" | "password";
 
 export type RegisterState =
   | { status: "idle" }
@@ -40,7 +40,8 @@ export async function register(
 
   // 2. Validate and clean the input
   const parsed = registerSchema.safeParse({
-    name: formData.get("name"),
+    firstName: formData.get("firstName"),
+    lastName: formData.get("lastName"),
     email: formData.get("email"),
     password: formData.get("password"),
   });
@@ -51,7 +52,9 @@ export async function register(
       fieldErrors: z.flattenError(parsed.error).fieldErrors,
     };
   }
-  const { name, email, password } = parsed.data;
+  const { firstName, lastName, email, password } = parsed.data;
+  // The database keeps one name column: store "First Last"
+  const name = `${firstName} ${lastName}`;
 
   // 3. Reject passwords known from data breaches
   if (await isPwnedPassword(password)) {
