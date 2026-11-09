@@ -266,3 +266,34 @@ This guide is a map of every file that takes part in signing users up, signing t
 - **Timing:** `verifyAgainstDummy` makes "no such user" cost the same Argon2 work as "wrong password", so response time doesn't reveal which emails have accounts.
 
 **Notes:** the dummy hash is made lazily on first use, so the very first unknown-email sign-in after a server start is slower (two Argon2 operations).
+
+### `src/lib/rate-limit.ts`
+
+**What it does:** A database-backed rate limiter. Each limit is a row in the `rate_limits` table keyed by a string like `forgot:email:<hash>`. One SQL statement inserts the row, or adds 1 to it, or restarts the window if it has expired, and returns the new count. If the count is above the limit, the caller refuses the request. This is a "fixed window" limiter: the count resets when the window ends.
+
+**Runs on:** server only (`import "server-only"`).
+
+**Exports:**
+- `LIMITS`: every limit in one place (sign-in 5 per email and 20 per IP per 15 min; register 5 per IP per hour; forgot password and resend verification 3 per email and 10 per IP per hour; reset password 10 per IP per hour; change password 5 per user per 15 min).
+- `hashIdentifier(value)`: SHA-256 of an email or IP, so the table never stores them in plain text.
+- `rateLimit(key, { limit, windowSeconds })`: counts this attempt, returns `{ allowed, remaining, resetAt }`.
+- `deleteExpiredRateLimits()`: removes finished windows.
+
+**Depends on (imports):**
+- Internal: `@/lib/db`.
+- Packages: `server-only`, `node:crypto`.
+- Environment variables read: none.
+
+**Used by (imported by):**
+- `src/features/auth/credentials.ts` (sign-in, per email and per IP)
+- `src/features/auth/actions/register.ts`, `verify-email.ts` (resend), `password-reset.ts`, `change-password.ts`
+
+**Security notes:**
+- The upsert is a single atomic statement, so two requests at the same moment can't both slip under the limit.
+- Limiting per email stops guessing one person's password; limiting per IP stops one attacker trying many emails.
+- Emails and IPs are hashed before they become keys.
+
+**Notes:**
+- `deleteExpiredRateLimits()` isn't called anywhere yet (as the handoff says, it still needs scheduling), so expired rows stay in the table until then. They're harmless, because an expired row is reset on its next use.
+- The change-password key uses the raw user id (`changepw:user:<id>`) rather than a hash. User ids aren't personal data, so that's fine, but it differs slightly from the handoff's "keys hashed".
+- Every attempt counts, including successful ones. For example, five successful sign-ins in 15 minutes block the sixth.
