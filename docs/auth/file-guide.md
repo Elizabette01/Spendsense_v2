@@ -485,3 +485,26 @@ The B6 test "`/login?callbackUrl=//evil.com` → sign in → lands on `/dashboar
 - Returns only what the session needs; `passwordHash` never leaves this function.
 
 **Notes:** `null` becomes a plain `CredentialsSignin` in `sign-in.ts`, which shows "Email or password is incorrect.". The two custom codes map to their own messages there.
+
+### `src/features/auth/activity-tracker.tsx`
+
+**What it does:** An invisible server component placed in the signed-in app layout. On each app page view it reads the session and, if there's a user, schedules `recordActivity(userId)` with `after()`, so the database write happens *after* the response has been sent and never slows the page down. It renders nothing.
+
+**Runs on:** server only (an async server component; no `"use client"`).
+
+**Exports:**
+- `ActivityTracker`: the component.
+
+**Depends on (imports):**
+- Internal: `@/auth` (`auth`), `@/lib/activity` (`recordActivity`).
+- Packages: `next/server` (`after`).
+- Environment variables read: none.
+
+**Used by (imported by):**
+- `src/app/(app)/layout.tsx`, inside `<Suspense fallback={null}>` (it reads the request, so it must be inside a boundary).
+
+**Security notes:** the user id comes from the validated session (`auth()` runs the `sessionVersion` check), not from anything the browser sends. Errors are caught and logged by message only.
+
+**Notes:**
+- The session is read *before* `after()` because cookies and headers aren't available inside `after()` in a server component.
+- In B6, the two new components that call `auth()` (`header-auth-actions.tsx`, `sidebar-user.tsx`) needed `await connection()` first: in development, Next flagged Auth.js's use of `crypto` while prerendering. `ActivityTracker` didn't trigger that warning in testing, so it was left as it is. If the warning ever appears on app pages, the same one-line fix applies here.
