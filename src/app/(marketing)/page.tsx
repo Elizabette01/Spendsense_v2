@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Cta } from "@/features/marketing/components/cta";
 import { Features } from "@/features/marketing/components/features";
 import { Hero } from "@/features/marketing/components/hero";
 import { HowItWorks } from "@/features/marketing/components/how-it-works";
@@ -18,6 +19,7 @@ export default function LandingPage() {
       <Features />
       <HowItWorks />
       <Pricing />
+      <Cta />
     </>
   );
 }
