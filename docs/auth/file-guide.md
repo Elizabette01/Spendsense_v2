@@ -186,7 +186,7 @@ This guide is a map of every file that takes part in signing users up, signing t
 
 **Security notes:** the verify and reset links carry a secret token in the URL (`?token=…`). `no-referrer` stops the browser from sending that full URL to any other site the page loads something from or links to.
 
-**Notes:** `partialPrefetching: true` is also on; it doesn't affect auth behaviour.
+**Notes:** `partialPrefetching: true` is also on; it doesn't affect auth behaviour. `devIndicators: false` hides the "N" badge that `npm run dev` shows in the corner (compile and runtime errors still appear).
 
 ---
 
@@ -664,7 +664,7 @@ These are small building blocks with no auth knowledge, so any feature can use t
 
 #### `src/components/ui/button.tsx`
 
-**What it does:** One visual style for buttons and button-looking links. `buttonStyles()` builds the class list from a variant (`primary`, `secondary`, `outline`, `ghost`) and a size (`md` 44px, `lg` 48px), so a `<button>` and a `<Link>` can look identical.
+**What it does:** One visual style for buttons and button-looking links. `buttonStyles()` builds the class list from a variant (`primary`, `secondary`, `outline`, `ghost`, `inverse`) and a size (`md` 44px, `lg` 48px), so a `<button>` and a `<Link>` can look identical.
 
 **Runs on:** both.
 
@@ -679,7 +679,7 @@ These are small building blocks with no auth knowledge, so any feature can use t
 
 **Security notes:** none.
 
-**Notes:** `primary` matches Figma "Button/Primary"; `secondary` is "Button/Secondary" (green outline); `outline` uses `foreground-subtle` for its border so the edge meets the 3:1 contrast rule for UI components (the Figma grey border didn't). Every variant has a visible `focus-visible` outline.
+**Notes:** `primary` matches Figma "Button/Primary"; `secondary` is "Button/Secondary" (green outline); `inverse` is a white button for green backgrounds that stays white in dark mode (brand-800 text, about 10:1); `outline` uses `foreground-subtle` for its border so the edge meets the 3:1 contrast rule for UI components (the Figma grey border didn't). Every variant has a visible `focus-visible` outline.
 
 #### `src/components/ui/input.tsx`
 
@@ -770,7 +770,7 @@ These are the page frames used by more than one area. They never import from `fe
 
 #### `src/components/layout/site-header.tsx`
 
-**What it does:** The sticky top navbar for the landing and auth pages: logo on the left; on the right, the light/dark toggle (always visible, even on phones) and an `actions` slot.
+**What it does:** The sticky top navbar for the landing and auth pages (in dark mode it gets a soft green shadow so it stands apart from the equally dark hero): logo on the left; on the right, the light/dark toggle (always visible, even on phones) and an `actions` slot.
 
 **Runs on:** server (no `"use client"`). It renders the client `HeaderMenu` and `ThemeToggle`.
 
@@ -1320,7 +1320,7 @@ The landing page has no auth logic of its own, but it's the front door to sign-u
 
 #### `src/features/marketing/components/cta.tsx`
 
-**What it does:** The green banner "Ready to take control of your finances?" with **Create your free account** (→ `/signup`; label from the mobile frame).
+**What it does:** The green banner "Ready to take control of your finances?" with a white **Create your free account** button (→ `/signup`; label from the mobile frame; `inverse` variant, so it stays white in dark mode).
 
 **Runs on:** server. **Exports:** `Cta`.
 
