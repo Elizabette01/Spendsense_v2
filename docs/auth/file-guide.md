@@ -184,3 +184,31 @@ This guide is a map of every file that takes part in signing users up, signing t
 **Security notes:** the verify and reset links carry a secret token in the URL (`?token=…`). `no-referrer` stops the browser from sending that full URL to any other site the page loads something from or links to.
 
 **Notes:** `partialPrefetching: true` is also on; it doesn't affect auth behaviour.
+
+---
+
+## Library (`src/lib/`)
+
+### `src/lib/db.ts`
+
+**What it does:** Creates the single Prisma client the whole app uses to talk to PostgreSQL, using the `pg` driver adapter. In development it stores the client on `globalThis`, so hot reloads reuse one client instead of opening a new connection pool on every file save. During `next build` it tolerates a missing `DATABASE_URL`, so the build can run without a database.
+
+**Runs on:** server only (`import "server-only"` makes a browser import fail the build).
+
+**Exports:**
+- `db`: the `PrismaClient` instance.
+
+**Depends on (imports):**
+- Internal: `@/generated/prisma/client` (the generated client).
+- Packages: `server-only`, `@prisma/adapter-pg` (Postgres driver adapter), `next/constants` (`PHASE_PRODUCTION_BUILD`).
+- Environment variables read: `DATABASE_URL`, `NEXT_PHASE`, `NODE_ENV`.
+
+**Used by (imported by):**
+- `src/auth.ts` (adapter, `jwt` check, `createUser` event)
+- `src/features/auth/credentials.ts` (user lookup, rehash)
+- `src/features/auth/actions/register.ts`, `verify-email.ts`, `password-reset.ts`, `change-password.ts`
+- `src/lib/rate-limit.ts`, `src/lib/tokens.ts`, `src/lib/activity.ts`
+
+**Security notes:** `server-only` guarantees database credentials and queries can never end up in browser JavaScript.
+
+**Notes:** during a build with no `DATABASE_URL`, the client is created with `connectionString: undefined`; any query at build time would then fail. That's fine today because nothing queries during prerendering (all `auth()` calls sit behind `<Suspense>` and `connection()`).
