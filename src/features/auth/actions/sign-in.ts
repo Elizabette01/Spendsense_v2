@@ -22,7 +22,7 @@ export async function signInWithPassword(
     await signIn("credentials", {
       email: formData.get("email"),
       password: formData.get("password"),
-      redirectTo: safeCallbackUrl("/"),
+      redirectTo: safeCallbackUrl(formData.get("callbackUrl")),
     });
   } catch (error) {
     if (error instanceof CredentialsSignin) {
