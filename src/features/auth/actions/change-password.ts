@@ -141,6 +141,6 @@ export async function changePassword(
   }
 
   // 9. This device is signed out too: clear its cookie and redirect
-  await signOut({ redirectTo: "/" });
+  await signOut({ redirectTo: "/login?status=password-changed" });
   return { status: "idle" };
 }

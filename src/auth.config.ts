@@ -3,6 +3,7 @@ import Google from "next-auth/providers/google";
 
 export const authConfig = {
   trustHost: process.env.AUTH_TRUST_HOST === "true" ? true : undefined,
+  pages: { signIn: "/login", error: "/login" }, 
   providers: [Google],
   session: {
     strategy: "jwt",

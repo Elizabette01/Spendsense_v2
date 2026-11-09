@@ -2,6 +2,7 @@
 
 import { AuthError, CredentialsSignin } from "next-auth";
 import { signIn } from "@/auth";
+import { safeCallbackUrl } from "../redirect";
 
 export type SignInState =
   | { status: "idle" }
@@ -21,7 +22,7 @@ export async function signInWithPassword(
     await signIn("credentials", {
       email: formData.get("email"),
       password: formData.get("password"),
-      redirectTo: "/",
+      redirectTo: safeCallbackUrl("/"),
     });
   } catch (error) {
     if (error instanceof CredentialsSignin) {
@@ -39,4 +40,10 @@ export async function signInWithPassword(
     throw error;
   }
   return { status: "idle" };
+}
+
+export async function signInWithGoogle(formData: FormData): Promise<void> {
+  await signIn("google", {
+    redirectTo: safeCallbackUrl(formData.get("callbackUrl")),
+  });
 }
