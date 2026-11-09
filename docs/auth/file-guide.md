@@ -127,3 +127,60 @@ This guide is a map of every file that takes part in signing users up, signing t
 **Notes:**
 - `PROTECTED_PREFIXES` is `["/dashboard", "/onboarding", "/settings"]`. The handoff says it covers "the seven app sections plus `/onboarding`", but `/transactions`, `/budgets`, `/imports`, `/insights` and `/recurring` aren't in the list. Those pages don't exist yet, so nothing is exposed today, but they'll need adding (or each page must handle signed-out visitors) before they're built.
 - `matches()` matches the exact path or `prefix/…`, so `/settingsx` isn't treated as `/settings`.
+
+### `src/types/next-auth.d.ts`
+
+**What it does:** A TypeScript "module augmentation" file: it adds SpendSense's own fields to Auth.js's built-in types. `Session.user` gains `id` and `role`; `User` gains optional `role` and `sessionVersion`; the `JWT` type (which lives in `@auth/core/jwt`, not `next-auth`) gains `role` and `sessionVersion`. It contains no runtime code at all.
+
+**Runs on:** neither: types only, erased at build time.
+
+**Exports:** nothing directly; it changes the types exported by `next-auth` and `@auth/core/jwt`.
+
+**Depends on (imports):**
+- Internal: `@/generated/prisma/client` (the `Role` enum type).
+- Packages: `next-auth` (`DefaultSession`).
+- Environment variables read: none.
+
+**Used by (imported by):** nobody imports it; TypeScript loads it because it sits under `src/` (covered by `tsconfig.json`'s `include`). Its types are used in `src/auth.config.ts` (`token.role` → `session.user.role`), `src/auth.ts` (`user.role`, `user.sessionVersion`, `token.sessionVersion`) and `src/features/auth/credentials.ts` (returns `sessionVersion`).
+
+**Security notes:** none at runtime, but it keeps `role` and `sessionVersion` type-checked, which makes it harder to forget the `sessionVersion` comparison or to misspell a role.
+
+### `src/app/api/auth/[...nextauth]/route.ts`
+
+**What it does:** The route handler that serves every URL under `/api/auth/` (the `[...nextauth]` folder name is a "catch-all" segment). It simply re-exports Auth.js's `GET` and `POST` handlers. Google redirects back here after sign-in (`/api/auth/callback/google`), and Auth.js's built-in endpoints such as `/api/auth/session` live here too.
+
+**Runs on:** server only (a route handler).
+
+**Exports:**
+- `GET`, `POST`: Auth.js's request handlers.
+
+**Depends on (imports):**
+- Internal: `@/auth` (`handlers`).
+- Packages: none directly.
+- Environment variables read: none directly.
+
+**Used by (imported by):** nobody imports it; Next.js routes `/api/auth/*` requests to it. The proxy's matcher skips `/api`, so these requests never go through `proxy.ts`.
+
+**Security notes:** this is where the OAuth `state`/PKCE checks and CSRF checks built into Auth.js happen. The UI never links here directly (no links to `/api/auth/signin`); it uses the `signIn` server actions instead.
+
+**Notes:** the folder name contains square brackets, so in PowerShell use `-LiteralPath` with it.
+
+### `next.config.ts` (auth-related parts)
+
+**What it does:** Next.js's configuration. Two parts matter for auth: `cacheComponents: true`, which is why every component that reads the request (`searchParams`, `cookies()`, `auth()`) must sit inside `<Suspense>`; and `headers()`, which sends `Referrer-Policy: no-referrer` on `/verify-email` and `/reset-password`.
+
+**Runs on:** build and server start-up (read once; changes need a server restart).
+
+**Exports:**
+- default `nextConfig`.
+
+**Depends on (imports):**
+- Internal: none.
+- Packages: `next` (the `NextConfig` type).
+- Environment variables read: none.
+
+**Used by (imported by):** Next.js itself.
+
+**Security notes:** the verify and reset links carry a secret token in the URL (`?token=…`). `no-referrer` stops the browser from sending that full URL to any other site the page loads something from or links to.
+
+**Notes:** `partialPrefetching: true` is also on; it doesn't affect auth behaviour.
