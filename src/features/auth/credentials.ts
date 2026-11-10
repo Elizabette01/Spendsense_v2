@@ -3,17 +3,8 @@ import { CredentialsSignin, type User } from "next-auth";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { LIMITS, hashIdentifier, rateLimit } from "@/lib/rate-limit";
-import {
-  hashPassword,
-  needsRehash,
-  verifyAgainstDummy,
-  verifyPassword,
-} from "@/lib/password";
-import {
-  PASSWORD_MAX_LENGTH,
-  countCharacters,
-  normalizePassword,
-} from "@/lib/password-rules";
+import { hashPassword, needsRehash, verifyAgainstDummy, verifyPassword } from "@/lib/password";
+import { PASSWORD_MAX_LENGTH, countCharacters, normalizePassword, } from "@/lib/password-rules";
 import { getClientIp } from "@/lib/request";
 import { emailSchema } from "./schemas";
 
@@ -23,6 +14,10 @@ class EmailNotVerified extends CredentialsSignin {
 
 class RateLimited extends CredentialsSignin {
   code = "rate_limited";
+}
+
+class AccountPendingDeletion extends CredentialsSignin {
+  code = "account_pending_deletion";
 }
 
 const signInSchema = z.object({
@@ -63,6 +58,7 @@ export async function authorizeCredentials(
       sessionVersion: true,
       passwordHash: true,
       emailVerified: true,
+      deletionScheduledFor: true,
     },
   });
 
@@ -77,6 +73,7 @@ export async function authorizeCredentials(
   if (!valid) return null;
 
   // 6. Only now say anything specific
+  if (user.deletionScheduledFor) throw new AccountPendingDeletion();
   if (!user.emailVerified) throw new EmailNotVerified();
 
   // 7. Upgrade the hash if the Argon2 settings have changed

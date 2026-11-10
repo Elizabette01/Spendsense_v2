@@ -12,6 +12,8 @@ const MESSAGES: Record<string, string> = {
   email_not_verified:
     "Please verify your email first. Check your inbox, or request a new link.",
   rate_limited: "Too many attempts. Please try again in 15 minutes.",
+   account_pending_deletion:
+    "This account is scheduled for deletion. Use the link in your email to reactivate it.",
 };
 
 export async function signInWithPassword(
