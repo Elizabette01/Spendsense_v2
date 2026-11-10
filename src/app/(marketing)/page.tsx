@@ -1,0 +1,27 @@
+import type { Metadata } from "next";
+import { Cta } from "@/features/marketing/components/cta";
+import { Features } from "@/features/marketing/components/features";
+import { Hero } from "@/features/marketing/components/hero";
+import { HowItWorks } from "@/features/marketing/components/how-it-works";
+import { Pricing } from "@/features/marketing/components/pricing";
+import { ScrollToTop } from "@/features/marketing/components/scroll-to-top";
+
+export const metadata: Metadata = {
+  title: "SpendSense · AI budgeting insights from your bank statements",
+  description:
+    "Upload your bank statements, get every transaction categorised automatically, and see where your money goes with AI-powered budgeting insights.",
+};
+
+/** The landing page (/). Static: no auth, cookies or searchParams here. */
+export default function LandingPage() {
+  return (
+    <>
+      <Hero />
+      <Features />
+      <HowItWorks />
+      <Pricing />
+      <Cta />
+      <ScrollToTop />
+    </>
+  );
+}

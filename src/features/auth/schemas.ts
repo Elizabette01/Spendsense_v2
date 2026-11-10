@@ -24,7 +24,16 @@ export const newPasswordSchema = z
   );
 
 export const registerSchema = z.object({
-  name: z.string().trim().min(1, "Enter your name").max(100, "Name is too long"),
+  firstName: z
+    .string()
+    .trim()
+    .min(1, "Enter your first name")
+    .max(50, "First name is too long"),
+  lastName: z
+    .string()
+    .trim()
+    .min(1, "Enter your last name")
+    .max(50, "Last name is too long"),
   email: emailSchema,
   password: newPasswordSchema,
 });

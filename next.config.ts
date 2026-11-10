@@ -3,6 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   /* config options here */
   cacheComponents: true,
+  // Hide the "N" dev-only badge; compile and runtime errors still show
+  devIndicators: false,
   partialPrefetching: true,
   turbopack: {
     rules: {

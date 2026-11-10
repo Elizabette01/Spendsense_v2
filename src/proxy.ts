@@ -1,11 +1,24 @@
-import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
-import { authConfig } from "@/auth.config";
+import { auth } from "@/auth";
 
-const { auth } = NextAuth(authConfig);
+// Uses the FULL Auth.js instance (auth.ts), not a database-free one. Its jwt
+// callback checks sessionVersion and role in the database, so a stale or
+// revoked session counts as signed out here too, and Auth.js clears the dead
+// cookie in this response. (A database-free proxy treated stale cookies as
+// signed in, bouncing /login and /signup to /dashboard.) Proxy runs on the
+// Node.js runtime in Next 16, so Prisma works here.
 
 // Adjust these to match your folders (real URLs, never "(app)")
-const PROTECTED_PREFIXES = ["/dashboard", "/onboarding", "/settings"];
+const PROTECTED_PREFIXES = [
+  "/dashboard",
+  "/transactions",
+  "/budgets",
+  "/imports",
+  "/insights",
+  "/recurring",
+  "/settings",
+  "/onboarding",
+];
 const ADMIN_PREFIXES = ["/admin"];
 const SIGNED_OUT_ONLY = ["/login", "/signup"];
 
