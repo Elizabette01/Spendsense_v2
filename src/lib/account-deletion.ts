@@ -1,0 +1,1 @@
+export const DELETION_GRACE_MS = 48 * 60 * 60 * 1000; // 48 hours
