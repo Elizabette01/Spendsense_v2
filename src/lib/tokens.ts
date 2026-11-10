@@ -6,6 +6,7 @@ import type { AuthTokenType } from "@/generated/prisma/client";
 const TOKEN_TTL_MS: Record<AuthTokenType, number> = {
   EMAIL_VERIFICATION: 24 * 60 * 60 * 1000, // 24 hours
   PASSWORD_RESET: 60 * 60 * 1000, // 1 hour
+  ACCOUNT_REACTIVATION: 48 * 60 * 60 * 1000, // 48 hours (grace period)
 };
 
 function hashToken(token: string): string {
