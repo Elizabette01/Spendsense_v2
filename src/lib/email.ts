@@ -84,3 +84,23 @@ export async function sendPasswordChangedEmail(to: string): Promise<void> {
     html: `<p>Your SpendSense password was just changed, and you've been signed out on all devices.</p><p>If this was you, there's nothing else to do.</p><p>If it wasn't you, <a href="${resetUrl}">reset your password straight away</a>.</p>`,
   });
 }
+
+export async function sendDeletionScheduledEmail(
+  to: string,
+  token: string,
+  deletionDate: Date,
+): Promise<void> {
+  const url = appUrl(`/reactivate-account?token=${encodeURIComponent(token)}`);
+  const when = deletionDate.toLocaleString("en-GB", {
+    timeZone: "Europe/London",
+    dateStyle: "full",
+    timeStyle: "short",
+  });
+
+  await send({
+    to,
+    subject: "Your SpendSense account is scheduled for deletion",
+    text: `Your SpendSense account is scheduled to be permanently deleted on ${when} (UK time). You've been signed out on all devices.\n\nChanged your mind, or didn't ask for this? Reactivate your account here:\n${url}\n\nIf you didn't request this, reactivate your account straight away and secure it by changing your password.\n\nAfter that time, your account and all its data will be deleted and can't be recovered.`,
+    html: `<p>Your SpendSense account is scheduled to be permanently deleted on <strong>${when}</strong> (UK time). You've been signed out on all devices.</p><p>Changed your mind, or didn't ask for this? <a href="${url}">Reactivate your account</a>.</p><p>If you didn't request this, reactivate your account straight away and secure it by changing your password.</p><p>After that time, your account and all its data will be deleted and can't be recovered.</p>`,
+  });
+}
