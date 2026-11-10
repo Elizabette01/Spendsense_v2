@@ -24,7 +24,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
     async signIn({ account, profile }) {
       if (account?.provider === "google") {
-        return profile?.email_verified === true;
+        if (profile?.email_verified !== true) return false;
+
+        const linked = await db.account.findUnique({
+          where: {
+            provider_providerAccountId: {
+              provider: account.provider,
+              providerAccountId: account.providerAccountId,
+            },
+          },
+          select: { user: { select: { deletionScheduledFor: true } } },
+        });
+
+        if (linked?.user.deletionScheduledFor) {
+          return "/login?error=AccountPendingDeletion";
+        }
       }
       return true;
     },
@@ -41,10 +55,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       const dbUser = await db.user.findUnique({
         where: { id: token.sub },
-        select: { role: true, sessionVersion: true },
+        select: { role: true, sessionVersion: true, deletionScheduledFor: true },
       });
 
-      if (!dbUser || dbUser.sessionVersion !== token.sessionVersion) {
+      if (!dbUser || dbUser.sessionVersion !== token.sessionVersion || dbUser.deletionScheduledFor) {
         return null;
       }
 
