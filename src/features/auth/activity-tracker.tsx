@@ -1,9 +1,9 @@
 import { after } from "next/server";
-import { auth } from "@/auth";
+import { getSession } from "@/lib/session";
 import { recordActivity } from "@/lib/activity";
 
 export async function ActivityTracker() {
-  const session = await auth();
+  const session = await getSession();
   const userId = session?.user?.id;
 
   if (userId) {
