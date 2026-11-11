@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef } from "react";
 import { createConsent, writeConsentToDocument } from "@/lib/consent";
 import { Button } from "@/components/ui/button";
 
@@ -14,8 +15,27 @@ import { Button } from "@/components/ui/button";
  * - Accept all and Reject all use the same variant and size, side by side.
  */
 export function CookieBanner({ onManage }: { onManage: () => void }) {
+  const ref = useRef<HTMLElement>(null);
+
+  // The banner is fixed to the bottom, so pad the page by its height while it
+  // shows. Otherwise it would cover the footer even when scrolled to the end
+  // (and hide focused links: WCAG 2.4.11 Focus Not Obscured).
+  useEffect(() => {
+    const banner = ref.current;
+    if (!banner) return;
+    const observer = new ResizeObserver(() => {
+      document.body.style.paddingBottom = `${banner.offsetHeight}px`;
+    });
+    observer.observe(banner);
+    return () => {
+      observer.disconnect();
+      document.body.style.paddingBottom = "";
+    };
+  }, []);
+
   return (
     <section
+      ref={ref}
       role="region"
       aria-label="Cookie consent"
       className="fixed inset-x-0 bottom-0 z-50 p-4 sm:p-6"
