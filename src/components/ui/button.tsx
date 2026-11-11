@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ComponentProps } from "react";
 
-type Variant = "primary" | "secondary" | "outline" | "ghost" | "inverse";
+type Variant = "primary" | "secondary" | "outline" | "ghost" | "inverse" | "destructive" | "destructive-outline";
 type Size = "md" | "lg";
 
 type StyleOptions = {
@@ -28,6 +28,14 @@ const variants: Record<Variant, string> = {
   // White button for green/coloured backgrounds, same in both themes
   // (brand-800 on white is ~10:1 contrast)
   inverse: "bg-white text-brand-800 hover:bg-brand-50 focus-visible:outline-white",
+  // Final "do the dangerous thing" button (e.g. in a confirm dialog).
+  // Light: white on #c0392b is ~5.4:1. Dark mode's destructive (#f08a7e) is
+  // too light for white text, so the text switches to the dark page colour.
+  destructive:
+    "bg-destructive text-white hover:opacity-90 focus-visible:outline-destructive dark:text-background",
+  // Opens a dangerous flow without doing it yet (e.g. "Delete account" in the Danger zone)
+  "destructive-outline":
+    "border border-destructive bg-card text-destructive hover:bg-background focus-visible:outline-destructive",
 };
 
 const sizes: Record<Size, string> = {
