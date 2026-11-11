@@ -104,3 +104,13 @@ export async function sendDeletionScheduledEmail(
     html: `<p>Your SpendSense account is scheduled to be permanently deleted on <strong>${when}</strong> (UK time). You've been signed out on all devices.</p><p>Changed your mind, or didn't ask for this? <a href="${url}">Reactivate your account</a>.</p><p>If you didn't request this, reactivate your account straight away and secure it by changing your password.</p><p>After that time, your account and all its data will be deleted and can't be recovered.</p>`,
   });
 }
+
+export async function sendAccountDeletedEmail(to: string): Promise<void> {
+  const signupUrl = appUrl("/signup");
+  await send({
+    to,
+    subject: "Your SpendSense account has been deleted",
+    text: `Your SpendSense account and all its data have now been permanently deleted, as you requested.\n\nThis can't be undone. If you'd like to use SpendSense again in future, you're welcome to create a new account: ${signupUrl}`,
+    html: `<p>Your SpendSense account and all its data have now been permanently deleted, as you requested.</p><p>This can't be undone. If you'd like to use SpendSense again in future, you're welcome to <a href="${signupUrl}">create a new account</a>.</p>`,
+  });
+}
