@@ -12,7 +12,9 @@ export const LIMITS = {
   resendVerificationIp: { limit: 10, windowSeconds: 60 * 60 },
   resetPasswordIp: { limit: 10, windowSeconds: 60 * 60 },
   changePasswordUser: { limit: 5, windowSeconds: 15 * 60 },
-    deleteAccountUser: { limit: 5, windowSeconds: 15 * 60 },
+  deleteAccountUser: { limit: 5, windowSeconds: 15 * 60 },
+  resendReactivationEmail: { limit: 3, windowSeconds: 60 * 60 },
+  resendReactivationIp: { limit: 10, windowSeconds: 60 * 60 },
 } as const;
 
 type RateLimitResult = {

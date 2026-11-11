@@ -25,6 +25,10 @@ const nextConfig: NextConfig = {
         source: "/reset-password",
         headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
       },
+      {
+        source: "/reactivate-account",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
     ];
   },
 };
