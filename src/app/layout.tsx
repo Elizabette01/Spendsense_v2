@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { THEME_SCRIPT } from "@/components/layout/theme-script";
+import { AnalyticsLoader } from "@/features/privacy/components/analytics-loader";
+import { CookieConsent } from "@/features/privacy/components/cookie-consent";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -26,7 +28,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {/* Applies the saved or system colour theme before the first paint */}
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {/* Before the page content so the banner is early in the tab order */}
+        <CookieConsent />
+        {children}
+        <AnalyticsLoader />
+      </body>
     </html>
   );
 }
