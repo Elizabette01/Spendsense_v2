@@ -3,6 +3,8 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { FormAlert } from "@/components/ui/form-alert";
 import { AuthHeading, AuthSplitCard } from "@/features/auth/components/auth-split-card";
+import { DELETION_GRACE_TEXT } from "@/features/auth/components/deletion-grace";
+import { SendNewLinkLink } from "@/features/auth/components/send-new-link-link";
 import { FormSkeleton } from "@/features/auth/components/form-skeleton";
 import { GoogleButton, OrDivider } from "@/features/auth/components/google-button";
 import { LoginForm } from "@/features/auth/components/login-form";
@@ -54,7 +56,25 @@ async function LoginContent({ searchParams }: { searchParams: SearchParams }) {
           Your password was changed. Sign in with your new password.
         </FormAlert>
       )}
-      {error && <FormAlert tone="error">{ERROR_MESSAGES[error] ?? FALLBACK_ERROR}</FormAlert>}
+      {status === "deletion-scheduled" && (
+        <FormAlert tone="info">
+          Your account is scheduled for deletion. We&apos;ve emailed you a link to reactivate it
+          within {DELETION_GRACE_TEXT}.
+        </FormAlert>
+      )}
+      {status === "reactivated" && (
+        <FormAlert tone="success">
+          Your account has been reactivated. Sign in to continue.
+        </FormAlert>
+      )}
+      {error === "AccountPendingDeletion" ? (
+        <FormAlert tone="error">
+          This account is scheduled for deletion. Use the link in your email to reactivate it.{" "}
+          <SendNewLinkLink />
+        </FormAlert>
+      ) : (
+        error && <FormAlert tone="error">{ERROR_MESSAGES[error] ?? FALLBACK_ERROR}</FormAlert>
+      )}
 
       <LoginForm callbackUrl={callbackUrl} />
       <OrDivider label="or continue with" />
