@@ -18,8 +18,10 @@ function hashToken(token: string): string {
 export async function createAuthToken(
   userId: string,
   type: AuthTokenType,
+  options: { expiresAt?: Date } = {},
 ): Promise<string> {
   const token = randomBytes(32).toString("base64url");
+  const expiresAt = options.expiresAt ?? new Date(Date.now() + TOKEN_TTL_MS[type]);
 
   await db.$transaction([
     db.authToken.deleteMany({ where: { userId, type } }),
@@ -28,7 +30,7 @@ export async function createAuthToken(
         userId,
         type,
         tokenHash: hashToken(token),
-        expiresAt: new Date(Date.now() + TOKEN_TTL_MS[type]),
+        expiresAt,
       },
     }),
   ]);
