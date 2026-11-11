@@ -16,8 +16,8 @@ const MAIN_NAV = [
   { href: "/budgets", label: "Budgets", icon: "◎" },
 ] as const;
 
-// There's no /settings page yet, so the link opens the password section.
-const SETTINGS = { href: "/settings/password", match: "/settings", label: "Settings", icon: "⚙" };
+// `match` keeps Settings highlighted on /settings/password too.
+const SETTINGS = { href: "/settings", match: "/settings", label: "Settings", icon: "⚙" };
 
 type AppShellProps = {
   /** Signed-in user's name and email (rendered by the auth feature). */
