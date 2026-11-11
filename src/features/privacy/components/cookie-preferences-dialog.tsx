@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Toggle } from "@/components/ui/toggle";
 
+const GA_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
+
 type CookiePreferencesDialogProps = {
   open: boolean;
   onClose: () => void;
@@ -39,6 +41,9 @@ export function CookiePreferencesDialog({
     // Withdrawal: scripts that already ran can't be unloaded, so remove their
     // cookies and reload the page so nothing keeps running.
     if (wasAllowed && !allowAnalytics) {
+      // Google's opt-out flag first: otherwise gtag (still running) rewrites
+      // its _ga_<ID> cookie while the page unloads, after we've deleted it.
+      if (GA_ID) (window as unknown as Record<string, unknown>)[`ga-disable-${GA_ID}`] = true;
       clearAnalyticsCookies();
       window.location.reload();
       return;
@@ -74,7 +79,7 @@ export function CookiePreferencesDialog({
           text="These keep you signed in, protect our forms from attacks and remember your cookie choice. SpendSense can't work without them."
         >
           <div className="flex items-center gap-2">
-            <span className="text-label text-foreground-muted">Always on</span>
+            <span className="whitespace-nowrap text-label text-foreground-muted">Always on</span>
             <Toggle
               checked
               disabled
