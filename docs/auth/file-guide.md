@@ -2551,6 +2551,37 @@ sequenceDiagram
   end
 ```
 
+### 8. Cookie consent flow
+
+Everything here happens in the browser; the server never reads `ss_consent`.
+
+```mermaid
+flowchart TD
+  visit["Page loads (server sends the same HTML to everyone)"] --> read["After mount: readConsentFromDocument()"]
+  read --> valid{"Valid ss_consent?"}
+  valid -- "no: missing, tampered, old version or older than 6 months" --> banner["Cookie banner"]
+  valid -- yes --> loaderCheck
+
+  banner -- "Accept all" --> saveYes["createConsent analytics: true"]
+  banner -- "Reject all" --> saveNo["createConsent analytics: false"]
+  banner -- "Manage preferences" --> dialog["Preferences dialog"]
+  settingsLink["Cookie settings button: footer, /cookies, Settings"] -- "ss:open-cookie-settings" --> dialog
+  dialog -- "Save / Accept all / Reject all" --> choice["createConsent with the choice"]
+
+  saveYes --> write["writeConsentToDocument: ss_consent cookie, 6 months"]
+  saveNo --> write
+  choice --> write
+  write --> event(["CONSENT_CHANGED_EVENT"])
+  event --> hide["Banner hides"]
+  event --> loaderCheck{"Analytics loader: hasConsent analytics?"}
+
+  loaderCheck -- no --> nothing["Nothing loads: no scripts, no _ga cookies"]
+  loaderCheck -- yes --> tools["Load each tool whose env variable is set: Vercel Web Analytics, GA4, Plausible"]
+
+  choice -. "analytics was on, now off" .-> withdraw["Withdrawal: ga-disable flag, clearAnalyticsCookies, reload"]
+  withdraw --> read
+```
+
 ### Reading the diagrams
 
 In the **dependency map**, an arrow means "imports". Follow arrows from a page down to see everything it relies on, or look for arrows *into* a box to see who would be affected if you changed it (for example, `db.ts` and `auth.ts` have the most arrows in). The boxes group files by layer: config at the edge of the framework, the library underneath, feature logic in the middle, UI on top, and the database at the bottom. Nothing in **Library** or **Shared UI** points into a feature, which is the "shared code doesn't depend on features" rule. In the **user journey**, solid arrows are the normal paths and the dotted arrow is an error path. In the **sequence diagrams**, time runs top to bottom: solid arrows are calls, dashed arrows are replies, `alt` boxes show the different outcomes, and `Note … after()` marks work that happens after the browser already has its response.
