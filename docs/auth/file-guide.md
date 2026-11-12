@@ -735,11 +735,11 @@ The B6 test "`/login?callbackUrl=//evil.com` → sign in → lands on `/dashboar
 
 ### Server actions (`src/features/auth/actions/`)
 
-All six files start with `"use server"`, so every exported async function is a **server action**: a function the browser can call by submitting a form, which runs only on the server. Treat each one as a public API endpoint, because anyone can call it with any input. That's why each one validates, rate-limits and (where relevant) checks `auth()` itself.
+All eight files start with `"use server"`, so every exported async function is a **server action**: a function the browser can call by submitting a form, which runs only on the server. Treat each one as a public API endpoint, because anyone can call it with any input. That's why each one validates, rate-limits and (where relevant) checks `auth()` itself.
 
 There are two styles:
-- **State-returning** (`register`, `signInWithPassword`, `changePassword`) return an object such as `{ status: "error", message, fieldErrors }` that a client component reads with `useActionState`.
-- **Redirecting** (`verifyEmail`, `resendVerification`, `requestPasswordReset`, `resetPassword`, `signInWithGoogle`, `signOutAction`) end with `redirect()` to a URL with `?status=` or `?error=`, and the page reads that. These work without JavaScript.
+- **State-returning** (`register`, `signInWithPassword`, `changePassword`, `requestAccountDeletion`) return an object such as `{ status: "error", message, fieldErrors }` that a client component reads with `useActionState`.
+- **Redirecting** (`verifyEmail`, `resendVerification`, `requestPasswordReset`, `resetPassword`, `signInWithGoogle`, `signOutAction`, `reactivateAccount`, `resendReactivation`) end with `redirect()` to a URL with `?status=` or `?error=`, and the page reads that. These work without JavaScript.
 
 #### `actions/register.ts`
 
@@ -876,6 +876,35 @@ There are two styles:
 **Form fields:** `currentPassword`, `newPassword`.
 
 **Security notes:** the user id comes from the session, never the form. Requiring the current password stops someone at an unlocked computer from taking over the account. Every device, including this one, is signed out (tested in B6: the old session was rejected afterwards).
+
+#### `actions/delete-account.ts`
+
+**What it does:** Schedules the signed-in user's account for deletion. Steps: `auth()` (must be signed in) → rate-limit per user → look up the user and decide the proof **from the database** → check the password (password accounts) or the typed email (Google-only accounts) → set `deletionScheduledFor = now + 48h` and increment `sessionVersion` in one update → create a reactivation token → send the "scheduled" email in `after()` → `signOut({ redirectTo: "/api/session/clear?reason=deletion-scheduled" })`, which clears cookies and lands on `/login?status=deletion-scheduled`.
+
+**Runs on:** server only (`"use server"`).
+
+**Exports:** `requestAccountDeletion(prevState, formData)`, type `DeleteAccountState` (`idle`, or `error` with `message` and optional `fieldErrors` for `password` / `confirmEmail`).
+
+**Depends on (imports):**
+- Internal: `@/auth` (`auth`, `signOut`), `@/lib/db`, `@/lib/account-deletion` (`DELETION_GRACE_MS`), `@/lib/email` (`sendDeletionScheduledEmail`), `@/lib/password` (`verifyPassword`), `@/lib/rate-limit`, `@/lib/tokens` (`createAuthToken`), `../schemas` (`emailSchema`, `existingPasswordSchema`).
+- Packages: `next/server` (`after`).
+- Environment variables read: none directly.
+
+**Used by (imported by):** `src/features/auth/components/delete-account-dialog.tsx` (with `useActionState`).
+
+**Form fields:** `password` (password accounts) or `confirmEmail` (Google-only accounts).
+
+**Security notes:**
+- The user id comes from the session, and the **database** decides which proof is needed. The `getDeletionProof()` prop only chooses which field the dialog shows, so tampering with it gains nothing.
+- The typed email is normalised the same way as stored emails (lowercase, NFKC) before comparing.
+- Incrementing `sessionVersion` and setting `deletionScheduledFor` signs out every device straight away; the `jwt` callback rejects both.
+- Not deleting immediately means a mistake, or someone else at an unlocked laptop, can be undone from the owner's inbox.
+- The rate limit runs before the password check, so the dialog can't be used to guess passwords quickly.
+
+**Notes:**
+- Scheduling and creating the token aren't in one transaction. If creating the token fails, the account is already scheduled (and signed out) but no email is sent; the user sees "Something went wrong" and can recover with "Send a new link" on `/reactivate-account`. Wrapping both in `db.$transaction` would close the gap.
+- An email failure inside `after()` is only logged; the same "Send a new link" route recovers from it.
+- The final `return { status: "idle" }` after `signOut()` is never reached, because `signOut` throws the redirect.
 
 ---
 
