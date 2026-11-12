@@ -1439,6 +1439,20 @@ UI used only by the auth feature. They import the server actions directly. Clien
 
 **Notes:** it rounds to whole days. If the grace period changed to something like 36 hours, the text would say "2 days", so check the wording then.
 
+#### `send-new-link-link.tsx`
+
+**What it does:** The "Send a new link" link to `/reactivate-account`, shown inside "scheduled for deletion" error messages. It's underlined and inherits the alert's text colour, so it reads as a link inside red or neutral alerts.
+
+**Runs on:** both.
+
+**Exports:** `SendNewLinkLink`.
+
+**Depends on (imports):** packages `next/link`. Env: none.
+
+**Used by (imported by):** `./login-form.tsx` (after the password sign-in message), `src/app/(auth)/login/page.tsx` (the `error=AccountPendingDeletion` banner, for Google sign-in).
+
+**Security notes:** none.
+
 ### Auth pages (`src/app/(auth)/`)
 
 `(auth)` is a **route group**: the brackets organise files without adding to the URL, so `src/app/(auth)/login/page.tsx` is `/login`. Pages stay thin: they read the URL, pick a state and compose components from `features/auth/components`. Nothing imports a page; Next.js routes to it.
