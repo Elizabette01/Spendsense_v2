@@ -1907,6 +1907,32 @@ Built in B7 on top of `src/lib/consent.ts`. Nothing here has a Figma frame; it's
 
 **Notes:** it only works once the page has loaded its JavaScript (it needs `CookieConsent` listening). Before that, a click does nothing. That's fine, since the dialog needs JavaScript anyway.
 
+#### `src/features/privacy/components/cookie-preferences-dialog.tsx`
+
+**What it does:** The "Cookie settings" dialog (built on the shared `Dialog`). Two rows:
+- **Strictly necessary**: what they do, plus a toggle that's on and disabled, labelled "Always on".
+- **Analytics**: names Google Analytics, Vercel Web Analytics and Plausible and what they're for; its toggle starts from the saved choice, or **off** if there isn't one.
+
+Buttons: **Save preferences** (saves the toggle), **Reject all** and **Accept all** (same style and size, side by side).
+
+**Runs on:** browser too (`"use client"`).
+
+**Exports:** `CookiePreferencesDialog({ open, onClose, initialAnalytics })`.
+
+**Depends on (imports):** `@/lib/consent` (`createConsent`, `readConsentFromDocument`, `writeConsentToDocument`, `clearAnalyticsCookies`), `@/components/ui/button`, `dialog`, `toggle`; packages `react`.
+- Environment variables read: `NEXT_PUBLIC_GA_MEASUREMENT_ID` (for the opt-out flag below).
+
+**Used by (imported by):** `./cookie-consent.tsx`.
+
+**Security notes (withdrawal):** if analytics was allowed and is now refused, it:
+1. sets `window['ga-disable-<ID>'] = true` (Google's official opt-out flag), so gtag stops sending data and writing cookies;
+2. calls `clearAnalyticsCookies()`;
+3. reloads the page, because scripts that already ran can't be unloaded.
+
+**Notes:**
+- Step 1 was added after testing: without it, gtag rewrote `_ga_<ID>` while the page was unloading, after it had been deleted. With it, both `_ga` cookies are gone after withdrawing (tested).
+- Each save goes through `writeConsentToDocument`, which fires `CONSENT_CHANGED_EVENT`, so the banner hides and the loader reacts without any direct link between them.
+
 ---
 
 ## Database
