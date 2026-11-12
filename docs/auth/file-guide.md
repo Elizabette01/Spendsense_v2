@@ -2483,6 +2483,33 @@ sequenceDiagram
   end
 ```
 
+### 6. Account deletion lifecycle
+
+The states an account moves through, and what moves it. `deletionScheduledFor` is the only thing that changes: `null` means Active, a date means Scheduled, and Deleted means the row is gone.
+
+```mermaid
+stateDiagram-v2
+  direction LR
+  [*] --> Active: sign up
+  Active --> Scheduled: requestAccountDeletion (password or email proof)
+  Scheduled --> Active: reactivateAccount (emailed link, before the deadline)
+  Scheduled --> Deleted: purge job (deadline passed)
+  Deleted --> [*]
+
+  note right of Scheduled
+    deletionScheduledFor = request + 48h
+    sessionVersion + 1 (signed out everywhere)
+    sessions, password and Google sign-in all refused
+    "Send a new link" emails a fresh link (same deadline)
+  end note
+
+  note right of Deleted
+    user row deleted, data cascades
+    ActivityEvent and AuditLog kept, user set to null
+    "Your account has been deleted" email
+  end note
+```
+
 ### Reading the diagrams
 
 In the **dependency map**, an arrow means "imports". Follow arrows from a page down to see everything it relies on, or look for arrows *into* a box to see who would be affected if you changed it (for example, `db.ts` and `auth.ts` have the most arrows in). The boxes group files by layer: config at the edge of the framework, the library underneath, feature logic in the middle, UI on top, and the database at the bottom. Nothing in **Library** or **Shared UI** points into a feature, which is the "shared code doesn't depend on features" rule. In the **user journey**, solid arrows are the normal paths and the dotted arrow is an error path. In the **sequence diagrams**, time runs top to bottom: solid arrows are calls, dashed arrows are replies, `alt` boxes show the different outcomes, and `Note … after()` marks work that happens after the browser already has its response.
