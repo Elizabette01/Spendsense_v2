@@ -1994,6 +1994,22 @@ Buttons: **Save preferences** (saves the toggle), **Reject all** and **Accept al
 - Vercel Web Analytics doesn't send data in development; it can only be checked on a Vercel deployment.
 - Tested with fake IDs: nothing loads before a choice or after Reject all; all three load without a reload after Accept all.
 
+#### `src/app/layout.tsx` (root layout)
+
+**What it does:** The outermost layout for every page. It loads the Inter font (`--font-inter`), sets the default `metadata`, runs the theme script in `<head>` before the first paint, and renders `<body>`. Since B7, `<body>` contains `<CookieConsent />` first, then the page (`children`), then `<AnalyticsLoader />`.
+
+**Runs on:** server. **Exports:** default `RootLayout`, `metadata`.
+
+**Depends on (imports):** `./globals.css`, `@/components/layout/theme-script` (`THEME_SCRIPT`), `@/features/privacy/components/cookie-consent`, `analytics-loader`; packages `next/font/google`.
+
+**Used by:** Next.js, for every route.
+
+**Security notes:** it never calls `cookies()`, `headers()` or `auth()`. If it did, every page in the app would become dynamic and the landing page couldn't be prerendered.
+
+**Notes:**
+- `CookieConsent` comes before the page content so the banner is early in the keyboard tab order.
+- B7 changed only the inside of `<body>`; fonts, metadata and classes are as they were.
+
 ---
 
 ## Database
