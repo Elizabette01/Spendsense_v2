@@ -32,6 +32,7 @@ This guide is a map of every file that takes part in signing users up, signing t
 - [`src/features/auth/redirect.ts`](#srcfeaturesauthredirectts)
 - [`src/features/auth/credentials.ts`](#srcfeaturesauthcredentialsts)
 - [`src/features/auth/activity-tracker.tsx`](#srcfeaturesauthactivity-trackertsx)
+- [`src/features/auth/queries.ts`](#srcfeaturesauthqueriests)
 - [Server actions (`src/features/auth/actions/`)](#server-actions-srcfeaturesauthactions)
 
 **UI**
@@ -683,6 +684,29 @@ The B6 test "`/login?callbackUrl=//evil.com` → sign in → lands on `/dashboar
 **Notes:**
 - The session is read *before* `after()` because cookies and headers aren't available inside `after()` in a server component.
 - In B6, the two new components that call `auth()` (`header-auth-actions.tsx`, `sidebar-user.tsx`) needed `await connection()` first: in development, Next flagged Auth.js's use of `crypto` while prerendering. `ActivityTracker` didn't trigger that warning in testing, so it was left as it is. If the warning ever appears on app pages, the same one-line fix applies here.
+
+### `src/features/auth/queries.ts`
+
+**What it does:** Database reads for the auth feature's pages. Right now there's one: `getDeletionProof()`, which tells the Settings page what the signed-in user must type to confirm deleting their account. Users with a password must enter it; Google-only users (no `passwordHash`) must type their account email instead.
+
+**Runs on:** server only (`import "server-only"`).
+
+**Exports:**
+- `DeletionProof`: the type `"password" | "email"`.
+- `getDeletionProof()`: `"password"`, `"email"`, or `null` if nobody is signed in (or the user no longer exists).
+
+**Depends on (imports):**
+- Internal: `@/lib/db` (reads `passwordHash`), `@/lib/session` (`getSession`, so it shares the page's one session lookup).
+- Packages: `server-only`.
+- Environment variables read: none.
+
+**Used by (imported by):**
+- `src/app/(app)/settings/page.tsx` (calls `getDeletionProof()` inside `<Suspense>` and passes the result down)
+- `src/features/auth/components/danger-zone.tsx` and `delete-account-dialog.tsx` (`import type { DeletionProof }` only; type imports are removed when compiling, so no server code reaches the browser)
+
+**Security notes:** the result only decides **which field the dialog shows**. `requestAccountDeletion` looks up the user again and decides the proof itself, so changing the prop in the browser gains nothing. Only a boolean-like answer leaves the server, never the hash.
+
+**Notes:** it selects only `passwordHash` and immediately turns it into `"password"`/`"email"`, so the hash never travels further than this function.
 
 ### Server actions (`src/features/auth/actions/`)
 
