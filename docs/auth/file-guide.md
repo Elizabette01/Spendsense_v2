@@ -280,7 +280,7 @@ This guide is a map of every file that takes part in signing users up, signing t
 **Runs on:** server only (`import "server-only"`).
 
 **Exports:**
-- `LIMITS`: every limit in one place (sign-in 5 per email and 20 per IP per 15 min; register 5 per IP per hour; forgot password and resend verification 3 per email and 10 per IP per hour; reset password 10 per IP per hour; change password 5 per user per 15 min).
+- `LIMITS`: every limit in one place (sign-in 5 per email and 20 per IP per 15 min; register 5 per IP per hour; forgot password and resend verification 3 per email and 10 per IP per hour; reset password 10 per IP per hour; change password 5 per user per 15 min; delete account 5 per user per 15 min; resend reactivation link 3 per email and 10 per IP per hour).
 - `hashIdentifier(value)`: SHA-256 of an email or IP, so the table never stores them in plain text.
 - `rateLimit(key, { limit, windowSeconds })`: counts this attempt, returns `{ allowed, remaining, resetAt }`.
 - `deleteExpiredRateLimits()`: removes finished windows.
@@ -293,6 +293,7 @@ This guide is a map of every file that takes part in signing users up, signing t
 **Used by (imported by):**
 - `src/features/auth/credentials.ts` (sign-in, per email and per IP)
 - `src/features/auth/actions/register.ts`, `verify-email.ts` (resend), `password-reset.ts`, `change-password.ts`
+- `src/features/auth/actions/delete-account.ts` (per user), `reactivate-account.ts` (resend, per email and per IP)
 
 **Security notes:**
 - The upsert is a single atomic statement, so two requests at the same moment can't both slip under the limit.
@@ -301,7 +302,8 @@ This guide is a map of every file that takes part in signing users up, signing t
 
 **Notes:**
 - `deleteExpiredRateLimits()` isn't called anywhere yet (as the handoff says, it still needs scheduling), so expired rows stay in the table until then. They're harmless, because an expired row is reset on its next use.
-- The change-password key uses the raw user id (`changepw:user:<id>`) rather than a hash. User ids aren't personal data, so that's fine, but it differs slightly from the handoff's "keys hashed".
+- The change-password and delete-account keys use the raw user id (`changepw:user:<id>`, `deleteacct:user:<id>`) rather than a hash. User ids aren't personal data, so that's fine, but it differs slightly from the handoff's "keys hashed". The reactivation keys (`reactivate:email:…`, `reactivate:ip:…`) are hashed.
+- The delete-account limit mainly slows down password guessing: the delete dialog asks for the password, so without it someone at an unlocked laptop could try passwords there.
 - Every attempt counts, including successful ones. For example, five successful sign-ins in 15 minutes block the sixth.
 
 ### `src/lib/tokens.ts`
