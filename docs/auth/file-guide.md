@@ -1666,6 +1666,27 @@ Buttons: **Cancel** (outline) and **Delete my account** (filled destructive, dis
 - Pages in `app/` may import from several features; it's only features that can't import each other. That's why this page composes auth, privacy and the placeholders.
 - Profile, Financial preferences, Notifications and "Delete all imported data" are disabled placeholders ("Coming soon"); see `_components/placeholder-sections.tsx` and `profile-section.tsx`.
 
+#### `src/app/(app)/settings/_components/placeholder-sections.tsx`
+
+**What it does:** The Settings sections from Figma whose backend doesn't exist yet, shown **disabled** with a "Coming soon" badge so the page matches the design without pretending to work:
+- `FinancialPreferencesSection`: monthly income, primary financial goal, currency (GBP £), and Save.
+- `NotificationsSection`: three toggles (statement upload reminder, spending spike alerts, monthly summary), all off.
+- `DeleteImportedDataRow`: "Delete all imported data" with a disabled **Delete data** button (placed in the Danger zone).
+
+**Runs on:** server (plain components; the `Toggle` inside is a client component).
+
+**Exports:** `FinancialPreferencesSection`, `NotificationsSection`, `DeleteImportedDataRow`.
+
+**Depends on (imports):** `@/components/ui/button`, `form-field`, `input`, `settings-section`, `toggle`.
+
+**Used by (imported by):** `src/app/(app)/settings/page.tsx`.
+
+**Security notes:** none (nothing can be submitted).
+
+**Notes:**
+- The leading `_` makes `_components` a **private folder**: Next.js never turns it into a route. These sections live here only because their real features don't exist yet. Move each one into its feature's `components/` folder when its backend is built.
+- Backend each one needs (also in `MOCK:` comments in the file): `getFinancialPreferences()` + `updateFinancialPreferences` (`monthlyIncome`, `primaryGoal`, `currency`); saved notification settings + an update action; `deleteImportedData()` in `features/imports/actions.ts` (with a confirm dialog like Delete account).
+
 #### `src/app/(app)/settings/password/page.tsx` → `/settings/password`
 
 **What it does:** "Settings" page title, then a card titled "Change password" containing `ChangePasswordForm`. It follows the Settings frame's page header and "Profile" section card, because there's no change-password frame.
@@ -1676,7 +1697,9 @@ Buttons: **Cancel** (outline) and **Delete my account** (filled destructive, dis
 
 **Security notes:** the page reads no user data, so it doesn't call `auth()`. The `changePassword` action does. `/settings` is in the proxy's protected list, so signed-out visitors are redirected to log in first.
 
-**Notes:** `src/app/(app)/dashboard/page.tsx` is still the placeholder heading, unchanged in B6.
+**Notes:**
+- `src/app/(app)/dashboard/page.tsx` is still the placeholder heading, unchanged in B6.
+- Since B7, the same form also appears in the `/settings` Danger zone, and the sidebar links to `/settings`. This page still works but nothing links to it; it could become a redirect to `/settings` (Elizabette's decision).
 
 ### Landing page (`src/app/(marketing)/` and `src/features/marketing/`)
 
