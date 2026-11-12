@@ -10,6 +10,7 @@ This guide is a map of every file that takes part in signing users up, signing t
 - [`src/proxy.ts`](#srcproxyts)
 - [`src/types/next-auth.d.ts`](#srctypesnext-authdts)
 - [`src/app/api/auth/[...nextauth]/route.ts`](#srcappapiauthnextauthroutets)
+- [`src/app/api/session/clear/route.ts`](#srcappapisessionclearroutets)
 - [`next.config.ts` (auth-related parts)](#nextconfigts-auth-related-parts)
 
 **Library (`src/lib/`)**
@@ -174,6 +175,34 @@ This guide is a map of every file that takes part in signing users up, signing t
 **Security notes:** this is where the OAuth `state`/PKCE checks and CSRF checks built into Auth.js happen. The UI never links here directly (no links to `/api/auth/signin`); it uses the `signIn` server actions instead.
 
 **Notes:** the folder name contains square brackets, so in PowerShell use `-LiteralPath` with it.
+
+### `src/app/api/session/clear/route.ts`
+
+**What it does:** A small `GET` route that wipes this browser's cookies and then redirects. It exists because **server actions can't set custom response headers**, and `Clear-Site-Data` is a header. The delete-account action and the stale-session guard send the browser here, and this route does the clean-up they can't.
+
+**Runs on:** server only (a route handler, served at `/api/session/clear`).
+
+**Exports:**
+- `GET(request)`: reads `?reason=`, picks the destination from an allowlist, and returns a redirect carrying the clean-up headers.
+
+**Depends on (imports):**
+- Internal: none.
+- Packages: `next/server` (`NextResponse`, `NextRequest`).
+- Environment variables read: none.
+
+**Used by (imported by):** nothing imports it; two places redirect to it:
+- `src/features/auth/actions/delete-account.ts` (`signOut({ redirectTo: "/api/session/clear?reason=deletion-scheduled" })`)
+- `src/features/auth/stale-session-guard.tsx` (`?reason=expired`)
+
+**Security notes:**
+- **Allowlisted destinations:** `deletion-scheduled` → `/login?status=deletion-scheduled`, `expired` → `/login`, anything else → `/login`. The `reason` value is never used as a URL, so this can't become an open redirect.
+- `Clear-Site-Data: "cookies"` removes every cookie for the site in modern browsers. As a fallback, it also expires every cookie whose name contains `authjs.session-token` (which covers the `__Secure-` name on HTTPS, and chunked `.0`/`.1` cookies), setting `secure` to match the prefix so the browser accepts the deletion.
+
+**Notes:**
+- `Clear-Site-Data` also removes `ss_consent`, so after deleting an account the cookie banner appears again. That's expected.
+- Browsers only honour `Clear-Site-Data` on secure origins (HTTPS, or `localhost` in development). That's why the by-name fallback matters.
+- Because it's a plain `GET`, any site could link someone to it and sign them out. The harm is small (they just sign in again), and a `GET` is needed because it's reached by redirect.
+- `src/proxy.ts`'s matcher skips `/api`, so the proxy doesn't run for this route.
 
 ### `next.config.ts` (auth-related parts)
 
