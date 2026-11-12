@@ -33,6 +33,7 @@ This guide is a map of every file that takes part in signing users up, signing t
 - [`src/features/auth/credentials.ts`](#srcfeaturesauthcredentialsts)
 - [`src/features/auth/activity-tracker.tsx`](#srcfeaturesauthactivity-trackertsx)
 - [`src/features/auth/queries.ts`](#srcfeaturesauthqueriests)
+- [`src/features/auth/stale-session-guard.tsx`](#srcfeaturesauthstale-session-guardtsx)
 - [Server actions (`src/features/auth/actions/`)](#server-actions-srcfeaturesauthactions)
 
 **UI**
@@ -707,6 +708,29 @@ The B6 test "`/login?callbackUrl=//evil.com` → sign in → lands on `/dashboar
 **Security notes:** the result only decides **which field the dialog shows**. `requestAccountDeletion` looks up the user again and decides the proof itself, so changing the prop in the browser gains nothing. Only a boolean-like answer leaves the server, never the hash.
 
 **Notes:** it selects only `passwordHash` and immediately turns it into `"password"`/`"email"`, so the hash never travels further than this function.
+
+### `src/features/auth/stale-session-guard.tsx`
+
+**What it does:** Cleans up a "stale" session cookie. If the browser still sends an `authjs.session-token` cookie but the session is no longer valid (password changed elsewhere, account scheduled for deletion, cookie expired), it redirects to `/api/session/clear?reason=expired`, which deletes the cookie and lands on `/login`. Server components can read cookies but can't delete them, which is why it has to send the browser to a route handler. It renders nothing.
+
+**Runs on:** server only (an async server component).
+
+**Exports:**
+- `StaleSessionGuard`: the component.
+
+**Depends on (imports):**
+- Internal: `@/lib/session` (`getSession`).
+- Packages: `next/headers` (`cookies`), `next/navigation` (`redirect`).
+- Environment variables read: none.
+
+**Used by (imported by):**
+- `src/app/(app)/layout.tsx`, in the same `<Suspense fallback={null}>` as `ActivityTracker` (it reads the request).
+
+**Security notes:** without it, a dead cookie would keep being sent, and every request would pay for a `jwt` callback database lookup that always fails. The redirect target is a fixed path, never built from the request.
+
+**Notes:**
+- It only checks whether a cookie *exists* (by name), never its value.
+- `RequireSession` in the same layout also redirects signed-out visitors (to `/login`). When the session is invalid, both want to redirect, and whichever renders first decides. If `RequireSession` wins, the visitor reaches `/login` with the stale cookie still there until it expires. That's harmless (the proxy treats it as signed out), but worth checking with a stale cookie if it matters.
 
 ### Server actions (`src/features/auth/actions/`)
 
