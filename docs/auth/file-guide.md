@@ -1321,11 +1321,13 @@ UI used only by the auth feature. They import the server actions directly. Clien
 
 **Exports:** `LoginForm({ callbackUrl })`.
 
-**Depends on (imports):** `../actions/sign-in`, `@/components/ui/form-alert`, `form-field`, `input`, `./password-input`, `./submit-button`; packages `next/link`, `react`.
+**Depends on (imports):** `../actions/sign-in`, `@/components/ui/form-alert`, `form-field`, `input`, `./password-input`, `./send-new-link-link`, `./submit-button`; packages `next/link`, `react`.
 
 **Used by (imported by):** `src/app/(auth)/login/page.tsx`.
 
 **Security notes:** shows the server's message unchanged, so "Email or password is incorrect." covers both unknown email and wrong password. Values live only in memory (no `localStorage`).
+
+**Notes:** when the message is the "scheduled for deletion" text, a "Send a new link" link to `/reactivate-account` is added after it. It matches on the exact text (`PENDING_DELETION_MESSAGE`, marked `FRAGILE`), so if the wording in `sign-in.ts` changes, the link silently stops appearing. An error `code` from the action would be sturdier.
 
 #### `signup-form.tsx`
 
