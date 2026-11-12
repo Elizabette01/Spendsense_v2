@@ -978,11 +978,11 @@ These are small building blocks with no auth knowledge, so any feature can use t
 
 **Depends on (imports):** none.
 
-**Used by (imported by):** `src/features/auth/components/login-form.tsx`, `signup-form.tsx`, `password-input.tsx` (`inputStyles`); `src/app/(auth)/forgot-password/page.tsx`, `verify-email/page.tsx`.
+**Used by (imported by):** `src/features/auth/components/login-form.tsx`, `signup-form.tsx`, `password-input.tsx` (`inputStyles`), `delete-account-dialog.tsx`, `profile-section.tsx`; `src/app/(auth)/forgot-password/page.tsx`, `verify-email/page.tsx`, `reactivate-account/page.tsx`; `src/app/(app)/settings/_components/placeholder-sections.tsx`.
 
 **Security notes:** none.
 
-**Notes:** the border is `foreground-subtle` rather than the lighter Figma grey, for 3:1 contrast. Inputs with `aria-invalid` get a red border automatically (`aria-invalid:` variant).
+**Notes:** the border is `foreground-subtle` rather than the lighter Figma grey, for 3:1 contrast. Inputs with `aria-invalid` get a red border automatically (`aria-invalid:` variant). Since B7, `disabled` inputs get the page background and muted text, used by the "Coming soon" Settings sections. (WCAG doesn't require contrast for disabled controls.)
 
 #### `src/components/ui/form-field.tsx`
 
