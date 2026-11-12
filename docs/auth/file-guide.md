@@ -91,19 +91,23 @@ This guide is a map of every file that takes part in signing users up, signing t
 
 **Used by (imported by):**
 - `src/app/api/auth/[...nextauth]/route.ts` (`handlers`)
-- `src/features/auth/actions/sign-in.ts` (`signIn`), `sign-out.ts` (`signOut`), `change-password.ts` (`auth`, `signOut`)
+- `src/features/auth/actions/sign-in.ts` (`signIn`), `sign-out.ts` (`signOut`), `change-password.ts` and `delete-account.ts` (`auth`, `signOut`)
 - `src/proxy.ts` (`auth` as the proxy wrapper)
-- `src/features/auth/activity-tracker.tsx`, `src/features/auth/components/header-auth-actions.tsx`, `sidebar-user.tsx`, `require-session.tsx` (`auth`)
+- `src/lib/session.ts` (`auth`, wrapped in `cache()` as `getSession`)
+- `src/features/auth/components/header-auth-actions.tsx`, `sidebar-user.tsx`, `require-session.tsx` (`auth`)
 
 **Security notes:**
-- `callbacks.signIn`: a Google sign-in is refused unless Google says the email is verified (`email_verified === true`), so nobody can claim an address they don't own.
-- `callbacks.jwt`: on sign-in it copies `role` and `sessionVersion` into the token. On every later `auth()` call it re-reads the user's `sessionVersion` and `role` from the database and returns `null` (signed out) if the user is gone or the version changed. This is how a password reset or change kills every other session.
+- `callbacks.signIn`: a Google sign-in is refused unless Google says the email is verified (`email_verified === true`), so nobody can claim an address they don't own. It then looks up the linked account by its compound key `provider_providerAccountId`; if that user is scheduled for deletion, it sends them to `/login?error=AccountPendingDeletion` instead of signing them in. (Written as guard clauses: each check returns early.)
+- `callbacks.jwt`: on sign-in it copies `role` and `sessionVersion` into the token. On every later `auth()` call it re-reads the user's `sessionVersion`, `role` and `deletionScheduledFor` from the database and returns `null` (signed out) if the user is gone, the version changed, or the account is scheduled for deletion. This is how a password reset, password change or deletion request kills every session.
 - `events.createUser` (runs when the adapter creates a user, i.e. a first Google sign-in): sets `emailVerified` and records a `SIGN_UP` activity event in one transaction.
 - No automatic account linking is configured, so a Google sign-in for an email that already has a password account fails with `OAuthAccountNotLinked` (shown as a banner on `/login`).
 
 **Notes:**
 - Because the `jwt` callback queries the database on every `auth()` call, each request that carries a session cookie costs a small query in the proxy, plus one for each `auth()` call while rendering. That's the price of instant session revocation.
 - Credentials sign-ins don't go through `events.createUser`; `register` creates those users and their `SIGN_UP` event itself.
+- During the deletion grace period there are three locks: the `jwt` callback (existing sessions), `authorizeCredentials` (password sign-in) and `callbacks.signIn` (Google). Only the emailed reactivation link clears `deletionScheduledFor`.
+- The Google deletion check only finds users who have **already** linked Google. A first-time Google sign-in has no linked account yet, so it falls through to Auth.js's usual `OAuthAccountNotLinked` handling for an existing email. That's the correct outcome; it just isn't this check that stops it.
+- Formatting is a little uneven (stray indentation before `adapter`, `providers` and `events`, trailing spaces). Cosmetic only.
 
 ### `src/proxy.ts`
 
