@@ -1480,6 +1480,22 @@ Buttons: **Cancel** (outline) and **Delete my account** (filled destructive, dis
 - `queries.ts` is `server-only`, but `import type` is removed when compiling, so importing the type here is safe.
 - The filename says "dialog", but the export is the button that opens it (the brief named the file).
 
+#### `danger-zone.tsx`
+
+**What it does:** The account rows of the Settings Danger zone: **Change password**, a divider, then **Delete account** (with a short explanation and the `DeleteAccountButton`). For `"password"` accounts, Change password is the full `ChangePasswordForm`. For Google-only (`"email"`) accounts it says the account signs in with Google and has no password yet, with a **Set a password** link to `/forgot-password`.
+
+**Runs on:** both (no hooks of its own; its children include client components).
+
+**Exports:** `AccountDangerZone({ proof })`.
+
+**Depends on (imports):** `@/components/ui/settings-section` (`SettingsRow`), `../queries` (type only), `./change-password-form`, `./delete-account-dialog`, `./deletion-grace`; packages `next/link`.
+
+**Used by (imported by):** `src/app/(app)/settings/page.tsx` (inside the Danger zone card, after "Delete all imported data").
+
+**Security notes:** none of its own. `proof` only changes what's shown; both actions check the database themselves.
+
+**Notes:** it returns rows, not a whole card, so the Settings page can put rows from other features (the imported-data placeholder) in the same Danger zone card without features importing each other.
+
 ### Auth pages (`src/app/(auth)/`)
 
 `(auth)` is a **route group**: the brackets organise files without adding to the URL, so `src/app/(auth)/login/page.tsx` is `/login`. Pages stay thin: they read the URL, pick a state and compose components from `features/auth/components`. Nothing imports a page; Next.js routes to it.
