@@ -1054,6 +1054,23 @@ These are small building blocks with no auth knowledge, so any feature can use t
 - Tailwind's reset removes the browser's default centring margin, so the dialog sets `m-auto` itself.
 - Parents give it a new `key` each time it opens, so fields and errors start fresh.
 
+#### `src/components/ui/toggle.tsx`
+
+**What it does:** The on/off switch from the Figma "Toggle" (40×22 with an 18px thumb). It's a `<button role="switch" aria-checked>`, so screen readers announce "switch, on" or "off", and Space or Enter flips it.
+
+**Runs on:** browser (`"use client"`).
+
+**Exports:**
+- `Toggle({ checked, onCheckedChange?, disabled?, ...buttonProps })`. Label it with `aria-labelledby` (or `aria-label`).
+
+**Depends on (imports):** packages `react` (types only). Env: none.
+
+**Used by (imported by):** `src/features/privacy/components/cookie-preferences-dialog.tsx` (Strictly necessary, always on; Analytics), `src/app/(app)/settings/_components/placeholder-sections.tsx` (Notifications, disabled).
+
+**Security notes:** none.
+
+**Notes:** the "off" track uses `foreground-subtle` so its edge meets the 3:1 contrast rule for UI components. It's a controlled component: it never changes itself, it just calls `onCheckedChange`.
+
 ### Shared layout (`src/components/layout/`)
 
 These are the page frames used by more than one area. They never import from `features/`: anything auth-specific (who's signed in, the sign-out button) is passed in as a prop or "slot" by the route's layout. That keeps the rule "features don't import each other, and shared code doesn't depend on features".
