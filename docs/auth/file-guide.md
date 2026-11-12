@@ -906,6 +906,37 @@ There are two styles:
 - An email failure inside `after()` is only logged; the same "Send a new link" route recovers from it.
 - The final `return { status: "idle" }` after `signOut()` is never reached, because `signOut` throws the redirect.
 
+#### `actions/reactivate-account.ts`
+
+**What it does:** Two redirecting actions for undoing a deletion during the grace period.
+- `reactivateAccount` (the **Keep my account** button): validate the `token` → consume it (single use) → clear `deletionScheduledFor`, but only if the deadline is still in the future → `/login?status=reactivated`. Any failure → `/reactivate-account?status=invalid`.
+- `resendReactivation` (the "Send a new link" form): validate the `email` (bad → `?status=invalid-email`) → rate-limit per email and per IP (over → `?status=limited`) → in `after()`, if that email belongs to an account still scheduled for deletion, create a new token that expires at the **original** deadline and email it → always `?status=sent`.
+
+**Runs on:** server only (`"use server"`).
+
+**Exports:** `reactivateAccount(formData)`, `resendReactivation(formData)`.
+
+**Depends on (imports):**
+- Internal: `@/lib/db`, `@/lib/email` (`sendDeletionScheduledEmail`), `@/lib/rate-limit` (`LIMITS`, `hashIdentifier`, `rateLimit`), `@/lib/request` (`getClientIp`), `@/lib/tokens` (`consumeAuthToken`, `createAuthToken`), `../schemas` (`emailSchema`, `tokenSchema`).
+- Packages: `next/server` (`after`), `next/navigation` (`redirect`).
+- Environment variables read: none directly.
+
+**Used by (imported by):** `src/app/(auth)/reactivate-account/page.tsx` (both, straight into `<form action>`).
+
+**Form fields:** hidden `token` (reactivate); `email` (resend).
+
+**Security notes:**
+- **Scanner-safe:** opening the email link only shows a page; nothing changes until the button is pressed, so email security scanners that "click" links can't reactivate (or use up) anything.
+- **Race with the purge job:** the update is `updateMany` with `deletionScheduledFor > now` inside its `where`. If the deadline has passed, `count` is 0 and the user sees "invalid", even if the purge hasn't run yet.
+- **Anti-enumeration:** `resendReactivation` always ends at `?status=sent`, and the lookup happens in `after()`, so neither the message nor the response time reveals whether the email has an account scheduled for deletion.
+- A resent link can't extend the grace period: its expiry is capped at the original deadline.
+- Only the emailed link reactivates. Signing in and resetting the password don't, so the deletion can only be undone by the inbox owner.
+
+**Notes:**
+- Reactivating doesn't sign the user in; they sign in again from `/login`. `sessionVersion` was incremented at deletion time, so any old cookies stay dead.
+- `reactivateAccount` has no rate limit. That's fine: tokens are 32 random bytes, far too many to guess.
+- A token is consumed even when the deadline has passed (the update then finds nothing). It wouldn't have worked anyway.
+
 ---
 
 ## UI
