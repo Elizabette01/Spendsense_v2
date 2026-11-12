@@ -23,6 +23,7 @@ This guide is a map of every file that takes part in signing users up, signing t
 - [`src/lib/activity.ts`](#srclibactivityts)
 - [`src/lib/account-deletion.ts`](#srclibaccount-deletionts)
 - [`src/lib/session.ts`](#srclibsessionts)
+- [`src/lib/consent.ts`](#srclibconsentts)
 
 **Feature logic (`src/features/auth/`)**
 - [`src/features/auth/schemas.ts`](#srcfeaturesauthschemasts)
@@ -454,6 +455,43 @@ This guide is a map of every file that takes part in signing users up, signing t
 - The rule is: **server components** use `getSession()`; **server actions** may keep calling `auth()`, because each action is its own request and the cache wouldn't help.
 - React's `cache()` only lasts for one server request; it never shares a session between users.
 - Not yet used everywhere: `sidebar-user.tsx`, `require-session.tsx` and `header-auth-actions.tsx` (built in B6) still call `auth()` directly, so an app page still does more than one session lookup. Switching them over is a small frontend change.
+
+### `src/lib/consent.ts`
+
+**What it does:** Everything about the cookie-consent choice, stored in a first-party cookie called `ss_consent`. It creates a choice (`{ version, analytics, decidedAt }`), turns it into cookie text and back, decides whether a saved choice is still valid, writes it to the browser and announces the change, and deletes Google Analytics cookies when someone withdraws. The banner, preferences dialog and analytics loader are all built on it.
+
+**Runs on:** both. Deliberately browser-safe: no `server-only`, no Zod, no Node APIs. The "Browser only" functions touch `document`/`window`, so only client components call them (`readConsentFromDocument` returns `null` on the server instead of crashing).
+
+**Exports:**
+- `CONSENT_COOKIE` (`"ss_consent"`), `CONSENT_VERSION` (`1`), `CONSENT_MAX_AGE_SECONDS` (182 days, about 6 months), `CONSENT_CHANGED_EVENT` (`"ss:consent-changed"`).
+- `ConsentCategory` (`"analytics"`) and `Consent` (the stored shape).
+- `createConsent({ analytics })`: a new choice stamped with the current version and time.
+- `serializeConsent` / `parseConsent`: to and from cookie text. `parseConsent` returns `null` for anything not JSON, the wrong shape, an old version, or older than 6 months.
+- `hasConsent(consent, "analytics")`: `true` only if that category was explicitly allowed.
+- `readConsentFromDocument()`: the valid saved choice, or `null` ("no decision").
+- `writeConsentToDocument(consent)`: saves the cookie (`Path=/`, `Max-Age`, `SameSite=Lax`, `Secure` on HTTPS) and fires `CONSENT_CHANGED_EVENT`.
+- `clearAnalyticsCookies()`: expires `_ga`, `_ga_*` and `_gid` on this host and each parent domain.
+
+**Depends on (imports):**
+- Internal: none.
+- Packages: none.
+- Environment variables read: none.
+
+**Used by (imported by):**
+- `src/features/privacy/components/cookie-consent.tsx` (show the banner when there's no decision; re-check on change)
+- `src/features/privacy/components/cookie-banner.tsx` (Accept all / Reject all)
+- `src/features/privacy/components/cookie-preferences-dialog.tsx` (save, and clear GA cookies on withdrawal)
+- `src/features/privacy/components/analytics-loader.tsx` (load analytics only with consent)
+
+**Security notes:**
+- Fails closed: any doubt (missing, garbled, tampered, old version, expired) means "no decision", so the banner shows and nothing optional loads.
+- Bumping `CONSENT_VERSION` re-asks everyone, which is what you do if the cookies used change.
+- The cookie isn't `HttpOnly` on purpose: the browser code has to read it. It holds no personal data.
+
+**Notes:**
+- The server never reads this cookie. That's what keeps the landing page static (reading cookies on the server would make every page dynamic).
+- `parseConsent` checks that a choice isn't *too old*, but not that `decidedAt` is in the past. A hand-edited future date would stay valid longer than 6 months. Only the visitor can edit their own cookie, so it isn't a security problem, just an edge case.
+- `clearAnalyticsCookies()` on its own wasn't enough during testing: gtag, still running, rewrote `_ga_<ID>` as the page unloaded. The preferences dialog now sets Google's `ga-disable-<ID>` flag first (see that entry).
 
 ---
 
