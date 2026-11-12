@@ -21,6 +21,7 @@ This guide is a map of every file that takes part in signing users up, signing t
 - [`src/lib/email.ts`](#srclibemailts)
 - [`src/lib/request.ts`](#srclibrequestts)
 - [`src/lib/activity.ts`](#srclibactivityts)
+- [`src/lib/account-deletion.ts`](#srclibaccount-deletionts)
 
 **Feature logic (`src/features/auth/`)**
 - [`src/features/auth/schemas.ts`](#srcfeaturesauthschemasts)
@@ -402,6 +403,29 @@ This guide is a map of every file that takes part in signing users up, signing t
 **Security notes:** none (analytics only), but it always takes the `userId` from the session, never from the request.
 
 **Notes:** `lastActiveAt` holds the time of the *first* visit each day, not the latest. Two requests at the same moment can't both create an event, because only one `updateMany` gets `count === 1`.
+
+### `src/lib/account-deletion.ts`
+
+**What it does:** Holds one number: how long an account waits between "delete my account" and actually being deleted (48 hours). It's the single source for the grace period, so the scheduled deletion time, the reactivation link's lifetime and the "2 days" shown in the UI can't drift apart.
+
+**Runs on:** both. A plain constant with no imports, so client components can use it too.
+
+**Exports:**
+- `DELETION_GRACE_MS`: 48 hours in milliseconds.
+
+**Depends on (imports):**
+- Internal: none.
+- Packages: none.
+- Environment variables read: none.
+
+**Used by (imported by):**
+- `src/features/auth/actions/delete-account.ts` (sets `deletionScheduledFor = now + DELETION_GRACE_MS`)
+- `src/lib/tokens.ts` (the `ACCOUNT_REACTIVATION` token lifetime)
+- `src/features/auth/components/deletion-grace.ts` (turns it into "2 days" for the delete dialog and the login banner)
+
+**Security notes:** none directly. Keeping one source means a reactivation link can never outlive the deletion it's meant to cancel.
+
+**Notes:** The purge job is planned to run once a day (the Vercel cron is a Step 9 task and isn't set up yet), so an account will actually be removed 48–72 hours after the request. The UI says "after 2 days", which is the earliest it can happen.
 
 ---
 
