@@ -1637,15 +1637,17 @@ Buttons: **Cancel** (outline) and **Delete my account** (filled destructive, dis
 
 #### `src/app/(app)/layout.tsx`
 
-**What it does:** The layout for every signed-in page. It renders `RequireSession` (the backup sign-in check), then `AppShell` with its slots filled by `SidebarUser` and `SignOutButton`, and keeps the pre-existing `<Suspense fallback={null}><ActivityTracker /></Suspense>` block unchanged after it.
+**What it does:** The layout for every signed-in page. It renders `RequireSession` (the backup sign-in check), then `AppShell` with its slots filled by `SidebarUser` and `SignOutButton`, and then a `<Suspense fallback={null}>` block holding `StaleSessionGuard` and `ActivityTracker`. That block must stay exactly as it is.
 
 **Runs on:** server. **Exports:** default `AppLayout`.
 
-**Depends on (imports):** `@/components/layout/app-shell`, `@/features/auth/activity-tracker`, `@/features/auth/components/require-session`, `sidebar-user`, `sign-out-button`; packages `react`.
+**Depends on (imports):** `@/components/layout/app-shell`, `@/features/auth/activity-tracker`, `@/features/auth/stale-session-guard`, `@/features/auth/components/require-session`, `sidebar-user`, `sign-out-button`; packages `react`.
 
-**Used by:** Next.js, for `/dashboard`, `/settings/password` and future app pages.
+**Used by:** Next.js, for `/dashboard`, `/settings`, `/settings/password` and the other app pages.
 
-**Security notes:** the proxy redirects signed-out visitors first. `RequireSession` redirects to `/login` if a request ever gets this far without a valid session. Pages and actions that touch user data must still call `auth()` themselves.
+**Security notes:** the proxy redirects signed-out visitors first. `RequireSession` redirects to `/login` if a request ever gets this far without a valid session. `StaleSessionGuard` clears a leftover session cookie that's no longer valid. Pages and actions that touch user data must still check the session themselves (`getSession()` in server components, `auth()` in actions).
+
+**Notes:** `StaleSessionGuard` and `ActivityTracker` share one `<Suspense>` and one cached session lookup (`getSession()`). See the guard's entry for how it interacts with `RequireSession`.
 
 #### `src/app/(app)/settings/password/page.tsx` → `/settings/password`
 
