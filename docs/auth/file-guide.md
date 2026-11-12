@@ -1709,15 +1709,17 @@ The landing page has no auth logic of its own, but it's the front door to sign-u
 
 #### `src/app/(marketing)/layout.tsx`
 
-**What it does:** `SiteHeader` (with `HeaderAuthActions`), then `<main>`, then `SiteFooter`.
+**What it does:** `SiteHeader` (with `HeaderAuthActions`), then `<main>`, then `SiteFooter` with the privacy feature's `CookieSettingsButton` passed into its `cookieSettings` slot.
 
 **Runs on:** server. **Exports:** default `MarketingLayout`.
 
-**Depends on (imports):** `@/components/layout/site-header`, `@/features/auth/components/header-auth-actions`, `@/features/marketing/components/site-footer`.
+**Depends on (imports):** `@/components/layout/site-header`, `@/features/auth/components/header-auth-actions`, `@/features/marketing/components/site-footer`, `@/features/privacy/components/cookie-settings-button`.
 
-**Used by:** Next.js, for `/`.
+**Used by:** Next.js, for `/` and `/cookies`.
 
 **Security notes:** none.
+
+**Notes:** the slot is how a feature's component ends up inside another feature's component: the footer (marketing) never imports the privacy feature; the layout in `app/` puts the two together.
 
 #### `src/app/(marketing)/page.tsx` → `/`
 
