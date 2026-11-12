@@ -1845,17 +1845,19 @@ The landing page has no auth logic of its own, but it's the front door to sign-u
 
 #### `src/features/marketing/components/site-footer.tsx`
 
-**What it does:** Logo, footer links (Privacy Policy, Terms, Contact) and the regulatory note: "SpendSense provides general information and budgeting insights, not regulated financial advice. For free, impartial guidance, visit MoneyHelper", linking to `https://www.moneyhelper.org.uk` in a new tab (with `rel="noopener noreferrer"` and a screen-reader note that it opens a new tab).
+**What it does:** Logo, footer links (Privacy Policy, Terms, Contact, Cookie policy, and the optional `cookieSettings` slot) and the regulatory note: "SpendSense provides general information and budgeting insights, not regulated financial advice. For free, impartial guidance, visit MoneyHelper", linking to `https://www.moneyhelper.org.uk` in a new tab (with `rel="noopener noreferrer"` and a screen-reader note that it opens a new tab).
 
-**Runs on:** server. **Exports:** `SiteFooter`.
+**Runs on:** server. **Exports:** `SiteFooter({ cookieSettings? })`.
 
-**Depends on (imports):** `@/components/layout/logo`; packages `next/link`.
+**Depends on (imports):** `@/components/layout/logo`; packages `next/link`, `react` (the `ReactNode` type).
 
-**Used by (imported by):** `src/app/(marketing)/layout.tsx`.
+**Used by (imported by):** `src/app/(marketing)/layout.tsx` (passes `<CookieSettingsButton />` as `cookieSettings`).
 
 **Security notes:** `noopener` stops the opened site from controlling this tab.
 
-**Notes:** Privacy, Terms and Contact link to `#` because those pages don't exist yet.
+**Notes:**
+- Privacy, Terms and Contact link to `#` because those pages don't exist yet. "Cookie policy" goes to `/cookies`.
+- The links wrap onto two lines on narrow screens (`flex-wrap`), since five don't fit at 320px.
 
 ### Images (`public/images/auth/`)
 
