@@ -308,16 +308,16 @@ This guide is a map of every file that takes part in signing users up, signing t
 
 ### `src/lib/tokens.ts`
 
-**What it does:** Creates and redeems the one-time tokens inside email links (verify email: 24 hours; reset password: 1 hour). A token is 32 random bytes in URL-safe base64. Only its SHA-256 hash is stored in `auth_tokens`, and creating a new token deletes the user's older tokens of the same type. Redeeming looks the hash up, deletes the row, and only then checks expiry.
+**What it does:** Creates and redeems the one-time tokens inside email links (verify email: 24 hours; reset password: 1 hour; reactivate account: 48 hours, the deletion grace period). A token is 32 random bytes in URL-safe base64. Only its SHA-256 hash is stored in `auth_tokens`, and creating a new token deletes the user's older tokens of the same type. Redeeming looks the hash up, deletes the row, and only then checks expiry.
 
 **Runs on:** server only (`import "server-only"`).
 
 **Exports:**
-- `createAuthToken(userId, type)`: returns the plain token (to put in the email link).
+- `createAuthToken(userId, type, { expiresAt? })`: returns the plain token (to put in the email link). `expiresAt` overrides the normal lifetime; the resend-reactivation action uses it to make a new link expire at the **original** deletion time, not 48 hours from now.
 - `consumeAuthToken(token, type)`: returns the `userId` if the token was valid, otherwise `null`. Single use.
 
 **Depends on (imports):**
-- Internal: `@/lib/db`, `@/generated/prisma/client` (the `AuthTokenType` type).
+- Internal: `@/lib/db`, `@/lib/account-deletion` (`DELETION_GRACE_MS`, the reactivation lifetime), `@/generated/prisma/client` (the `AuthTokenType` type).
 - Packages: `server-only`, `node:crypto` (`randomBytes`, SHA-256).
 - Environment variables read: none.
 
@@ -325,6 +325,8 @@ This guide is a map of every file that takes part in signing users up, signing t
 - `src/features/auth/actions/register.ts` (creates verification tokens)
 - `src/features/auth/actions/verify-email.ts` (consumes verification tokens; creates new ones on resend)
 - `src/features/auth/actions/password-reset.ts` (creates and consumes reset tokens)
+- `src/features/auth/actions/delete-account.ts` (creates the first reactivation token)
+- `src/features/auth/actions/reactivate-account.ts` (consumes reactivation tokens; creates new ones on resend, capped at the deadline)
 
 **Security notes:**
 - Storing only the hash means a database leak doesn't give anyone working links.
@@ -332,7 +334,10 @@ This guide is a map of every file that takes part in signing users up, signing t
 - The type is checked, so a verification token can't be used as a reset token.
 - Old tokens of the same type are deleted when a new one is made, so only the newest email link works.
 
-**Notes:** an expired token is deleted when someone tries it (it's consumed first and then rejected), which is fine because it was useless anyway.
+**Notes:**
+- An expired token is deleted when someone tries it (it's consumed first and then rejected), which is fine because it was useless anyway.
+- Because a new token deletes older ones of the same type, asking for a new reactivation link makes the link in the first deletion email stop working. Only the newest email works.
+- There's an extra blank line after the imports (cosmetic only).
 
 ### `src/lib/email.ts`
 
