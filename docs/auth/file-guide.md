@@ -22,6 +22,7 @@ This guide is a map of every file that takes part in signing users up, signing t
 - [`src/lib/request.ts`](#srclibrequestts)
 - [`src/lib/activity.ts`](#srclibactivityts)
 - [`src/lib/account-deletion.ts`](#srclibaccount-deletionts)
+- [`src/lib/session.ts`](#srclibsessionts)
 
 **Feature logic (`src/features/auth/`)**
 - [`src/features/auth/schemas.ts`](#srcfeaturesauthschemasts)
@@ -426,6 +427,33 @@ This guide is a map of every file that takes part in signing users up, signing t
 **Security notes:** none directly. Keeping one source means a reactivation link can never outlive the deletion it's meant to cancel.
 
 **Notes:** The purge job is planned to run once a day (the Vercel cron is a Step 9 task and isn't set up yet), so an account will actually be removed 48–72 hours after the request. The UI says "after 2 days", which is the earliest it can happen.
+
+### `src/lib/session.ts`
+
+**What it does:** Wraps `auth()` in React's `cache()`, so a session is looked up **once per request** however many server components ask for it. Each `auth()` call runs the `jwt` callback, which queries the database; without the cache, a layout and a page that both need the session would each pay for that query.
+
+**Runs on:** server only (`import "server-only"`).
+
+**Exports:**
+- `getSession()`: the current session (or `null`), memoised for the rest of this request.
+
+**Depends on (imports):**
+- Internal: `@/auth` (`auth`).
+- Packages: `server-only`, `react` (`cache`).
+- Environment variables read: none.
+
+**Used by (imported by):**
+- `src/features/auth/queries.ts` (`getDeletionProof`)
+- `src/features/auth/stale-session-guard.tsx` (is there a session?)
+- `src/features/auth/activity-tracker.tsx` (who to record activity for)
+- `src/features/auth/components/profile-section.tsx` (name and email on Settings)
+
+**Security notes:** none of its own. It returns exactly what `auth()` returns, so the `sessionVersion` and deletion checks in the `jwt` callback still apply.
+
+**Notes:**
+- The rule is: **server components** use `getSession()`; **server actions** may keep calling `auth()`, because each action is its own request and the cache wouldn't help.
+- React's `cache()` only lasts for one server request; it never shares a session between users.
+- Not yet used everywhere: `sidebar-user.tsx`, `require-session.tsx` and `header-auth-actions.tsx` (built in B6) still call `auth()` directly, so an app page still does more than one session lookup. Switching them over is a small frontend change.
 
 ---
 
