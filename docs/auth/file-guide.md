@@ -341,7 +341,7 @@ This guide is a map of every file that takes part in signing users up, signing t
 
 ### `src/lib/email.ts`
 
-**What it does:** Sends the four auth emails through Resend: verify your email, reset your password, "you already have an account", and "your password was changed". Each has a plain-text and an HTML version. Links are built from `APP_URL`. The Resend client is created on first use, not when the file loads.
+**What it does:** Sends the six auth emails through Resend: verify your email, reset your password, "you already have an account", "your password was changed", "your account is scheduled for deletion" (with the reactivation link) and "your account has been deleted". Each has a plain-text and an HTML version. Links are built from `APP_URL`. The Resend client is created on first use, not when the file loads.
 
 **Runs on:** server only (`import "server-only"`).
 
@@ -350,6 +350,8 @@ This guide is a map of every file that takes part in signing users up, signing t
 - `sendPasswordResetEmail(to, token)`: link to `/reset-password?token=…` (1 hour).
 - `sendAccountExistsEmail(to)`: links to `/login` and `/forgot-password`.
 - `sendPasswordChangedEmail(to)`: notice with a link to `/forgot-password` in case it wasn't them.
+- `sendDeletionScheduledEmail(to, token, deletionDate)`: the deletion time in UK time (`Europe/London`) and a link to `/reactivate-account?token=…`. Also tells someone who didn't ask for this to reactivate and change their password.
+- `sendAccountDeletedEmail(to)`: the final "it's gone" notice, with a link to `/signup`.
 
 **Depends on (imports):**
 - Internal: none.
@@ -361,13 +363,19 @@ This guide is a map of every file that takes part in signing users up, signing t
 - `src/features/auth/actions/verify-email.ts` (verification resend)
 - `src/features/auth/actions/password-reset.ts` (reset link, changed notice)
 - `src/features/auth/actions/change-password.ts` (changed notice)
+- `src/features/auth/actions/delete-account.ts` (scheduled notice with the first reactivation link)
+- `src/features/auth/actions/reactivate-account.ts` (scheduled notice again, on resend)
+- `src/app/api/cron/purge-deleted-accounts/route.ts` (deleted notice)
 
 **Security notes:**
 - `sendAccountExistsEmail` is the anti-enumeration piece of sign-up: the form says the same thing whether or not the email is taken, and only the inbox owner learns an account exists.
 - Links are built from the server's `APP_URL`, never from the request's `Host` header, so an attacker can't make reset links point to their own domain.
 - Failures are logged by error name and message only, never with the token or link.
 
-**Notes:** with the Resend test sender, only the Resend account's own address actually receives mail. Sending to any other address makes `send()` throw. (For automated testing, Resend's `delivered@resend.dev` inbox, with a `+label`, works.)
+**Notes:**
+- With the Resend test sender, only the Resend account's own address actually receives mail. Sending to any other address makes `send()` throw. (For automated testing, Resend's `delivered@resend.dev` inbox, with a `+label`, works.)
+- There's no development mode: running locally sends real emails through Resend. Keep that in mind when testing sign-up and account deletion.
+- The deletion email is the account owner's safety net: if someone else deleted the account (for example on an unlocked laptop), the owner still has 48 hours to undo it from their inbox.
 
 ### `src/lib/request.ts`
 
