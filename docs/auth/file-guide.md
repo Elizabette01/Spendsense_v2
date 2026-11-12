@@ -1453,6 +1453,33 @@ UI used only by the auth feature. They import the server actions directly. Clien
 
 **Security notes:** none.
 
+#### `delete-account-dialog.tsx`
+
+**What it does:** The **Delete account** button and its confirm dialog. No Figma frame exists, so it's built from the Edit Budget Modal via the shared `Dialog`. It uses `useActionState(requestAccountDeletion)`. The dialog explains what happens ("permanently deleted after 2 days… signed out on all devices… we'll email you a link to reactivate"), then asks for one field depending on `proof`:
+- `"password"`: "Enter your password to confirm", a `PasswordInput` with `name="password"` and `autoComplete="current-password"`.
+- `"email"`: "Type your account email to confirm", an `Input` with `name="confirmEmail"`, `type="email"` and `autoComplete="off"`, never pre-filled.
+
+Buttons: **Cancel** (outline) and **Delete my account** (filled destructive, disabled with "Deleting…" while pending).
+
+**Runs on:** browser too (`"use client"`).
+
+**Exports:** `DeleteAccountButton({ proof })` (the button; it owns the dialog).
+
+**Depends on (imports):** `../actions/delete-account` (`requestAccountDeletion`, `DeleteAccountState`), `../queries` (**type only**: `DeletionProof`), `@/components/ui/button`, `dialog`, `form-alert`, `form-field`, `input`, `./deletion-grace`, `./password-input`; packages `react`.
+
+**Used by (imported by):** `./danger-zone.tsx`.
+
+**Security notes:**
+- **Focus starts on Cancel**, never on the destructive button, so pressing Enter straight away can't delete anything.
+- Server messages and field errors are shown unchanged. After a failed submit, focus moves to the field with the error (or to the alert).
+- There's no client-side redirect: on success the action signs out and redirects through `/api/session/clear`.
+
+**Notes:**
+- The submit button sits in the dialog's footer, outside the `<form>`, so it's linked with the `form="<id>"` attribute.
+- A new `key` each time the dialog opens resets `useActionState`, so an old error or typed password doesn't reappear.
+- `queries.ts` is `server-only`, but `import type` is removed when compiling, so importing the type here is safe.
+- The filename says "dialog", but the export is the button that opens it (the brief named the file).
+
 ### Auth pages (`src/app/(auth)/`)
 
 `(auth)` is a **route group**: the brackets organise files without adding to the URL, so `src/app/(auth)/login/page.tsx` is `/login`. Pages stay thin: they read the URL, pick a state and compose components from `features/auth/components`. Nothing imports a page; Next.js routes to it.
