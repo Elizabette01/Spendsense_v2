@@ -1649,6 +1649,23 @@ Buttons: **Cancel** (outline) and **Delete my account** (filled destructive, dis
 
 **Notes:** `StaleSessionGuard` and `ActivityTracker` share one `<Suspense>` and one cached session lookup (`getSession()`). See the guard's entry for how it interacts with `RequireSession`.
 
+#### `src/app/(app)/settings/page.tsx` → `/settings`
+
+**What it does:** The Settings page, from the Figma "Settings — /settings" frame, with one deliberate change: the **Danger zone is last**, because it changes important things. Order: page header ("Settings" / "Manage your account, preferences, and data") → **Profile** → **Financial preferences** → **Notifications** → **Privacy** (Cookie settings) → **Danger zone**. The Danger zone card holds "Delete all imported data", then (inside `<Suspense>`) the account rows: Change password and Delete account. The account rows need `getDeletionProof()`, which reads the session, so that part streams in.
+
+**Runs on:** server. **Exports:** default page, `metadata` (title).
+
+**Depends on (imports):** `@/components/ui/settings-section`, `@/features/auth/components/danger-zone`, `form-skeleton`, `profile-section`, `@/features/auth/queries` (`getDeletionProof`), `@/features/privacy/components/privacy-settings-section`, `./_components/placeholder-sections`; packages `next/server` (`connection`), `react`.
+
+**Used by:** Next.js (the sidebar's Settings link).
+
+**Security notes:** behind the proxy (`/settings` is protected) and `RequireSession`. If `getDeletionProof()` returns `null` (not signed in), the account rows render nothing rather than guessing.
+
+**Notes:**
+- The page shell (header and the session-free sections) prerenders. Profile and the account rows wait behind their own `<Suspense>` boundaries, so the build shows the page as partially prerendered (◐).
+- Pages in `app/` may import from several features; it's only features that can't import each other. That's why this page composes auth, privacy and the placeholders.
+- Profile, Financial preferences, Notifications and "Delete all imported data" are disabled placeholders ("Coming soon"); see `_components/placeholder-sections.tsx` and `profile-section.tsx`.
+
 #### `src/app/(app)/settings/password/page.tsx` → `/settings/password`
 
 **What it does:** "Settings" page title, then a card titled "Change password" containing `ChangePasswordForm`. It follows the Settings frame's page header and "Profile" section card, because there's no change-password frame.
