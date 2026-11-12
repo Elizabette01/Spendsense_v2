@@ -1933,6 +1933,24 @@ Buttons: **Save preferences** (saves the toggle), **Reject all** and **Accept al
 - Step 1 was added after testing: without it, gtag rewrote `_ga_<ID>` while the page was unloading, after it had been deleted. With it, both `_ga` cookies are gone after withdrawing (tested).
 - Each save goes through `writeConsentToDocument`, which fires `CONSENT_CHANGED_EVENT`, so the banner hides and the loader reacts without any direct link between them.
 
+#### `src/features/privacy/components/cookie-banner.tsx`
+
+**What it does:** The banner pinned to the bottom of the screen when there's no valid choice: a short explanation, a "Cookie policy" link to `/cookies`, and three buttons: **Manage preferences** (opens the dialog), **Reject all** and **Accept all**. Reject and Accept save straight away with `writeConsentToDocument(createConsent({ analytics: false | true }))`.
+
+**Runs on:** browser too (`"use client"`).
+
+**Exports:** `CookieBanner({ onManage })`.
+
+**Depends on (imports):** `@/lib/consent` (`createConsent`, `writeConsentToDocument`), `@/components/ui/button`; packages `next/link`, `react`.
+
+**Used by (imported by):** `./cookie-consent.tsx` (which decides when to show it).
+
+**Security notes:** none. Privacy notes: nothing is pre-selected, Reject all and Accept all are the same variant and size side by side, and there's no guilt wording.
+
+**Notes:**
+- `role="region"` with `aria-label="Cookie consent"`. It never grabs focus; it comes early in the tab order instead (it's rendered before the page content), and the page stays usable behind it.
+- While it shows, it adds bottom padding to `<body>` equal to its own height (measured with a `ResizeObserver`), and removes it when it closes. Without that, it covered the footer even when scrolled to the very end, which also fails WCAG 2.2 "Focus Not Obscured".
+
 ---
 
 ## Database
