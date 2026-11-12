@@ -1423,6 +1423,22 @@ UI used only by the auth feature. They import the server actions directly. Clien
 
 **Notes:** it redirects to plain `/login` (without a `callbackUrl`); the proxy's redirect, which normally runs first, adds one.
 
+#### `deletion-grace.ts`
+
+**What it does:** Turns `DELETION_GRACE_MS` into words for the UI: `DELETION_GRACE_DAYS` (`2`) and `DELETION_GRACE_TEXT` (`"2 days"`, or `"1 day"` if it were ever one day). The delete dialog, the Danger zone row and the login banner all use it, so none of them hard-codes "2 days".
+
+**Runs on:** both (constants only).
+
+**Exports:** `DELETION_GRACE_DAYS`, `DELETION_GRACE_TEXT`.
+
+**Depends on (imports):** `@/lib/account-deletion`. Env: none.
+
+**Used by (imported by):** `./delete-account-dialog.tsx`, `./danger-zone.tsx`, `src/app/(auth)/login/page.tsx`.
+
+**Security notes:** none.
+
+**Notes:** it rounds to whole days. If the grace period changed to something like 36 hours, the text would say "2 days", so check the wording then.
+
 ### Auth pages (`src/app/(auth)/`)
 
 `(auth)` is a **route group**: the brackets organise files without adding to the URL, so `src/app/(auth)/login/page.tsx` is `/login`. Pages stay thin: they read the URL, pick a state and compose components from `features/auth/components`. Nothing imports a page; Next.js routes to it.
