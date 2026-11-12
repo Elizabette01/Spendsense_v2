@@ -40,7 +40,7 @@ This guide is a map of every file that takes part in signing users up, signing t
 - [Shared UI primitives (`src/components/ui/`)](#shared-ui-primitives-srccomponentsui) (including the new `dialog`, `toggle` and `settings-section`)
 - [Shared layout (`src/components/layout/`)](#shared-layout-srccomponentslayout)
 - [Auth components (`src/features/auth/components/`)](#auth-components-srcfeaturesauthcomponents)
-- [Auth pages (`src/app/(auth)/`)](#auth-pages-srcappauth)
+- [Auth pages (`src/app/(auth)/`)](#auth-pages-srcappauth) (including `/reactivate-account`)
 - [App area (`src/app/(app)/`)](#app-area-srcappapp)
 - [Landing page (`src/app/(marketing)/` and `src/features/marketing/`)](#landing-page-srcappmarketing-and-srcfeaturesmarketing)
 - [Images (`public/images/auth/`)](#images-publicimagesauth)
@@ -1616,6 +1616,22 @@ Buttons: **Cancel** (outline) and **Delete my account** (filled destructive, dis
 **Security notes:** opening the link changes nothing; only the button does (tested). Also gets `Referrer-Policy: no-referrer`.
 
 **Notes:** B6 replaced the temporary `signIn()` form with a `<Link href="/login">`.
+
+#### `src/app/(auth)/reactivate-account/page.tsx` → `/reactivate-account`
+
+**What it does:** The page behind the link in the "scheduled for deletion" email. Elizabette built the minimal version; B7 restyled it with the centred card to match `/verify-email` and kept the behaviour exactly. Inside `<Suspense>` it reads `token` and `status`:
+- Token present, no status: "Reactivate your account" / "Your account is scheduled for deletion. Confirm below to keep it." plus **Keep my account** (posts the hidden `token` to `reactivateAccount`).
+- `sent`: "If that email belongs to an account scheduled for deletion, we've sent a new reactivation link. It works until the scheduled deletion time."
+- `limited`: "Too many requests".
+- Anything else (`invalid`, `invalid-email`, no token): "This link is invalid or has expired" plus a form to send a new link (`resendReactivation`, field `email`); `invalid-email` adds "Enter a valid email address." under the field.
+
+**Runs on:** server. **Exports:** default page, `metadata`.
+
+**Depends on (imports):** `@/features/auth/actions/reactivate-account`, `@/components/ui/form-field`, `input`, `@/features/auth/components/auth-centered-card`, `back-to-login`, `form-skeleton`, `submit-button`; packages `react`.
+
+**Security notes:** opening the link changes nothing; only the button does (tested with a fake token: nothing changed until pressed, then it showed the invalid state). Gets `Referrer-Policy: no-referrer` from `next.config.ts`. The "sent" wording doesn't reveal whether the email has an account.
+
+**Notes:** no Figma frame; it follows the "Forgot password" centred card like the other one-step screens. The proxy doesn't protect it, so signed-out visitors (which everyone in the grace period is) can open it.
 
 ### App area (`src/app/(app)/`)
 
