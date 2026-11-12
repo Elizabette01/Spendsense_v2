@@ -1969,6 +1969,31 @@ Buttons: **Save preferences** (saves the toggle), **Reject all** and **Accept al
 - It renders nothing on the server and on the first browser render, so the HTML always matches and the landing page stays static.
 - The dialog only mounts after it's first opened, and gets a new `key` each time, so it always starts from the current saved choice.
 
+#### `src/features/privacy/components/analytics-loader.tsx`
+
+**What it does:** Loads the analytics tools, but only after the visitor has allowed analytics. Until `hasConsent(consent, "analytics")` is `true` it renders nothing. It re-checks whenever `CONSENT_CHANGED_EVENT` fires, so **Accept all** starts analytics straight away, without a reload. When allowed, each tool loads only if its env variable is set:
+- **Vercel Web Analytics:** `<Analytics />` from `@vercel/analytics/next`, if `NEXT_PUBLIC_VERCEL_ANALYTICS === "true"`.
+- **Google Analytics 4:** `<GoogleAnalytics gaId />` from `@next/third-parties/google`, if `NEXT_PUBLIC_GA_MEASUREMENT_ID` is set.
+- **Plausible:** `next/script` loading `https://plausible.io/js/script.js` with `data-domain`, if `NEXT_PUBLIC_PLAUSIBLE_DOMAIN` is set.
+
+**Runs on:** browser too (`"use client"`).
+
+**Exports:** `AnalyticsLoader`.
+
+**Depends on (imports):** `@/lib/consent` (`CONSENT_CHANGED_EVENT`, `hasConsent`, `readConsentFromDocument`).
+- Packages: `@vercel/analytics` (2.0.1), `@next/third-parties` (16.4.6), `next/script`, `react`. The import paths and props match the installed versions' type definitions and the Next 16 bundled guide.
+- Environment variables read: `NEXT_PUBLIC_VERCEL_ANALYTICS`, `NEXT_PUBLIC_GA_MEASUREMENT_ID`, `NEXT_PUBLIC_PLAUSIBLE_DOMAIN`.
+
+**Used by (imported by):** `src/app/layout.tsx` (once, at the end of `<body>`).
+
+**Security notes:** no user ids, names, emails or custom events are ever sent; only the tools' default page views.
+
+**Notes:**
+- `NEXT_PUBLIC_` values are **baked into the browser code at build time**. Changing them in Vercel needs a redeploy.
+- Removing the component doesn't stop scripts that already ran. That's why withdrawal reloads the page (see the preferences dialog).
+- Vercel Web Analytics doesn't send data in development; it can only be checked on a Vercel deployment.
+- Tested with fake IDs: nothing loads before a choice or after Reject all; all three load without a reload after Accept all.
+
 ---
 
 ## Database
