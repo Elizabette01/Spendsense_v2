@@ -1027,11 +1027,11 @@ These are small building blocks with no auth knowledge, so any feature can use t
 
 **Depends on (imports):** none.
 
-**Used by (imported by):** `src/app/(app)/settings/password/page.tsx`.
+**Used by (imported by):** `src/app/(app)/settings/password/page.tsx`, `src/components/layout/page-placeholder.tsx`, `./settings-section.tsx`.
 
 **Security notes:** none.
 
-**Notes:** only one page uses it so far. It lives in `ui/` because the brief listed card as a shared primitive.
+**Notes:** it lives in `ui/` because the brief listed card as a shared primitive. Every Settings section is a `Card` (through `SettingsSection`).
 
 #### `src/components/ui/dialog.tsx`
 
@@ -1070,6 +1070,24 @@ These are small building blocks with no auth knowledge, so any feature can use t
 **Security notes:** none.
 
 **Notes:** the "off" track uses `foreground-subtle` so its edge meets the 3:1 contrast rule for UI components. It's a controlled component: it never changes itself, it just calls `onCheckedChange`.
+
+#### `src/components/ui/settings-section.tsx`
+
+**What it does:** The building blocks of the Settings page, from the Figma "Settings — /settings" frame. `SettingsSection` is one card: a heading (with an optional badge such as "Coming soon"), a divider, then content. `tone="danger"` gives the card a destructive-coloured border and heading, for the Danger zone. `SettingsRow` is the Figma Danger-zone row: a title and description on the left and an action (button, link or toggle) on the right, stacking underneath on small screens.
+
+**Runs on:** both.
+
+**Exports:**
+- `SettingsSection({ id, title, tone?, badge?, children })`: `id` goes on the `<h2>`, and the `<section>` is labelled by it.
+- `SettingsRow({ title, description?, action? })`: the title is an `<h3>`, so headings stay in order inside a section.
+
+**Depends on (imports):** internal `./card`. Env: none.
+
+**Used by (imported by):** `src/app/(app)/settings/page.tsx` (the Danger zone card), `src/features/auth/components/danger-zone.tsx`, `profile-section.tsx`, `src/features/privacy/components/privacy-settings-section.tsx`, `src/app/(app)/settings/_components/placeholder-sections.tsx`.
+
+**Security notes:** none.
+
+**Notes:** it's in `ui/` (not a feature) because sections from three features (auth, privacy and the placeholders) all use it, and features can't import each other.
 
 ### Shared layout (`src/components/layout/`)
 
