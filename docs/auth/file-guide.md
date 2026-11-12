@@ -2029,6 +2029,18 @@ Buttons: **Save preferences** (saves the toggle), **Reject all** and **Accept al
 - The table scrolls sideways inside its own box on small screens (keyboard-focusable, labelled), so the page itself never scrolls sideways.
 - "Contact page" links to `#` until a contact page exists (same as the footer).
 
+#### `src/app/(marketing)/cookies/page.tsx` → `/cookies`
+
+**What it does:** A thin route file: page `metadata` (title and description) and `<CookiePolicy />`. It sits in the `(marketing)` group, so it gets the landing page's header and footer.
+
+**Runs on:** server. **Exports:** default page, `metadata`.
+
+**Depends on (imports):** `@/features/privacy/components/cookie-policy`.
+
+**Used by:** Next.js. Linked from the cookie banner, the footer, and the Settings Privacy section.
+
+**Security notes:** none. It reads no request data, so its content prerenders. (The build shows ◐ only because the shared header streams the signed-in state.)
+
 ---
 
 ## Database
