@@ -177,7 +177,7 @@ This guide is a map of every file that takes part in signing users up, signing t
 
 ### `next.config.ts` (auth-related parts)
 
-**What it does:** Next.js's configuration. Two parts matter for auth: `cacheComponents: true`, which is why every component that reads the request (`searchParams`, `cookies()`, `auth()`) must sit inside `<Suspense>`; and `headers()`, which sends `Referrer-Policy: no-referrer` on `/verify-email` and `/reset-password`.
+**What it does:** Next.js's configuration. Two parts matter for auth: `cacheComponents: true`, which is why every component that reads the request (`searchParams`, `cookies()`, `auth()`) must sit inside `<Suspense>`; and `headers()`, which sends `Referrer-Policy: no-referrer` on `/verify-email`, `/reset-password` and `/reactivate-account`.
 
 **Runs on:** build and server start-up (read once; changes need a server restart).
 
@@ -191,7 +191,7 @@ This guide is a map of every file that takes part in signing users up, signing t
 
 **Used by (imported by):** Next.js itself.
 
-**Security notes:** the verify and reset links carry a secret token in the URL (`?token=…`). `no-referrer` stops the browser from sending that full URL to any other site the page loads something from or links to.
+**Security notes:** the verify, reset and reactivation links carry a secret token in the URL (`?token=…`). `no-referrer` stops the browser from sending that full URL to any other site the page loads something from or links to.
 
 **Notes:** `partialPrefetching: true` is also on; it doesn't affect auth behaviour. `devIndicators: false` hides the "N" badge that `npm run dev` shows in the corner (compile and runtime errors still appear).
 
