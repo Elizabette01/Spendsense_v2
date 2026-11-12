@@ -1539,12 +1539,15 @@ Buttons: **Cancel** (outline) and **Delete my account** (filled destructive, dis
 
 **What it does:** The split card with "Welcome back" in the static shell. Inside `<Suspense>` it reads `callbackUrl`, `error` and `status`, then shows:
 - `status=password-changed` → a success banner.
+- `status=deletion-scheduled` → an info banner: "Your account is scheduled for deletion. We've emailed you a link to reactivate it within 2 days." (days from `DELETION_GRACE_TEXT`).
+- `status=reactivated` → a success banner: "Your account has been reactivated. Sign in to continue."
+- `error=AccountPendingDeletion` (from the Google `signIn` callback) → an error banner with a **Send a new link** link to `/reactivate-account`.
 - `error=OAuthAccountNotLinked` / `AccessDenied` / anything else → the matching fixed error banner.
 - Then `LoginForm` and the Google button, both given `callbackUrl` (only if it's a single string).
 
 **Runs on:** server. **Exports:** default page, `metadata` (title).
 
-**Depends on (imports):** `@/components/ui/form-alert`, `@/features/auth/components/auth-split-card`, `form-skeleton`, `google-button`, `login-form`; packages `next/link`, `react`.
+**Depends on (imports):** `@/components/ui/form-alert`, `@/features/auth/components/auth-split-card`, `deletion-grace`, `form-skeleton`, `google-button`, `login-form`, `send-new-link-link`; packages `next/link`, `react`.
 
 **Security notes:** `callbackUrl` is passed on unchanged; only the server actions decide whether it's safe. Signed-in visitors never see this page (the proxy sends them to `/dashboard`; tested).
 
