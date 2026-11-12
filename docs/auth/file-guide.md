@@ -2041,6 +2041,22 @@ Buttons: **Save preferences** (saves the toggle), **Reject all** and **Accept al
 
 **Security notes:** none. It reads no request data, so its content prerenders. (The build shows ◐ only because the shared header streams the signed-in state.)
 
+#### `src/features/privacy/components/privacy-settings-section.tsx`
+
+**What it does:** The Settings "Privacy" card: a "Cookies" row ("Choose whether we can use analytics." plus a "Cookie policy" link) with a **Cookie settings** button. No Figma frame; it uses the same row style as the Danger zone.
+
+**Runs on:** server (the button inside is a client component).
+
+**Exports:** `PrivacySettingsSection`.
+
+**Depends on (imports):** `@/components/ui/settings-section`, `./cookie-settings-button`; packages `next/link`.
+
+**Used by (imported by):** `src/app/(app)/settings/page.tsx`.
+
+**Security notes:** none.
+
+**Notes:** the signed-in area has no footer, so this is where signed-in users find Cookie settings.
+
 ---
 
 ## Database
