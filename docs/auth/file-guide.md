@@ -2114,6 +2114,8 @@ flowchart LR
     types[next-auth.d.ts]
     route["api/auth/[...nextauth]"]
     nextconfig[next.config.ts]
+    sessionClear["api/session/clear"]
+    purge["api/cron/purge-deleted-accounts"]
   end
 
   subgraph Library
@@ -2125,6 +2127,9 @@ flowchart LR
     email[email.ts]
     request[request.ts]
     activity[activity.ts]
+    accountDeletion[account-deletion.ts]
+    session[session.ts]
+    consent[consent.ts]
   end
 
   subgraph Feature["Feature logic"]
@@ -2138,6 +2143,10 @@ flowchart LR
     aVerify[actions/verify-email]
     aReset[actions/password-reset]
     aChange[actions/change-password]
+    queries[queries.ts]
+    staleGuard[stale-session-guard.tsx]
+    aDelete[actions/delete-account]
+    aReactivate[actions/reactivate-account]
   end
 
   subgraph UI
@@ -2147,6 +2156,9 @@ flowchart LR
       uiField[ui/form-field]
       uiAlert[ui/form-alert]
       uiCard[ui/card]
+      uiDialog[ui/dialog]
+      uiToggle[ui/toggle]
+      uiSettings[ui/settings-section]
       logo[layout/logo]
       siteHeader[layout/site-header]
       headerMenu[layout/header-menu]
@@ -2170,6 +2182,11 @@ flowchart LR
       sidebarUser[sidebar-user]
       signOutBtn[sign-out-button]
       requireSession[require-session]
+      graceTs[deletion-grace]
+      sendLink[send-new-link-link]
+      deleteDialog[delete-account-dialog]
+      dangerZone[danger-zone]
+      profileSection[profile-section]
     end
     subgraph AuthPages["Auth pages"]
       authLayout["(auth)/layout"]
@@ -2178,10 +2195,13 @@ flowchart LR
       pForgot[forgot-password/page]
       pReset[reset-password/page]
       pVerify[verify-email/page]
+      pReactivate[reactivate-account/page]
     end
     subgraph App
       appLayout["(app)/layout"]
       pSettings[settings/password/page]
+      pSettingsMain[settings/page]
+      placeholders[settings/_components/placeholder-sections]
     end
     subgraph Landing
       mLayout["(marketing)/layout"]
@@ -2197,6 +2217,17 @@ flowchart LR
       footer[site-footer]
       scrollTop[scroll-to-top]
     end
+    subgraph Privacy["Cookie consent (privacy)"]
+      events[events.ts]
+      cookieConsent[cookie-consent]
+      banner[cookie-banner]
+      prefsDialog[cookie-preferences-dialog]
+      settingsBtn[cookie-settings-button]
+      loader[analytics-loader]
+      policy[cookie-policy]
+      privacySection[privacy-settings-section]
+      pCookies["(marketing)/cookies/page"]
+    end
   end
 
   %% Config
@@ -2204,18 +2235,26 @@ flowchart LR
   proxy --> authts
   types --> schema
   route --> authts
+  purge --> db & email
 
   %% Library
   db --> schema
   password --> pwrules
   ratelimit --> db
-  tokens --> db
+  tokens --> db & accountDeletion
+  session --> authts
   activity --> db
 
   %% Feature logic
   schemas --> pwrules
   credentials --> db & ratelimit & password & pwrules & request & schemas
-  tracker --> authts & activity
+  tracker --> session & activity
+  queries --> db & session
+  staleGuard --> session
+  staleGuard -.->|redirects| sessionClear
+  aDelete --> authts & db & accountDeletion & email & password & ratelimit & tokens & schemas
+  aDelete -.->|redirects| sessionClear
+  aReactivate --> db & email & ratelimit & request & tokens & schemas
   aRegister --> db & ratelimit & password & tokens & email & request & schemas
   aSignIn --> authts & redirect
   aSignOut --> authts
@@ -2227,35 +2266,43 @@ flowchart LR
   siteHeader --> logo & headerMenu & themeToggle
   appShell --> logo & themeToggle
   themeToggle --> themeScript
-  rootLayout --> themeScript
+  rootLayout --> themeScript & cookieConsent & loader
+  uiSettings --> uiCard
 
   %% Auth components
   splitCard --> logo
   submit --> uiButton
   pwInput --> uiInput
   google --> aSignIn & submit
-  loginForm --> aSignIn & uiAlert & uiField & uiInput & pwInput & submit
+  loginForm --> aSignIn & uiAlert & uiField & uiInput & pwInput & sendLink & submit
   signupForm --> aRegister & pwrules & uiButton & uiAlert & uiField & uiInput & splitCard & google & pwInput & submit
   changeForm --> aChange & pwrules & uiAlert & uiField & pwInput & submit
   headerActions --> authts & uiButton & aSignOut & submit
   sidebarUser --> authts
   signOutBtn --> aSignOut
   requireSession --> authts
+  graceTs --> accountDeletion
+  deleteDialog --> aDelete & queries & uiButton & uiDialog & uiAlert & uiField & uiInput & graceTs & pwInput
+  dangerZone --> uiSettings & queries & changeForm & deleteDialog & graceTs
+  profileSection --> session & uiButton & uiField & uiInput & uiSettings
 
   %% Auth pages
   authLayout --> siteHeader & headerActions
-  pLogin --> uiAlert & splitCard & skeleton & google & loginForm
+  pLogin --> uiAlert & splitCard & graceTs & skeleton & google & loginForm & sendLink
   pSignup --> splitCard & signupForm
   pForgot --> aReset & uiField & uiInput & centeredCard & backToLogin & skeleton & submit
   pReset --> aReset & pwrules & uiButton & uiField & centeredCard & backToLogin & skeleton & pwInput & submit
   pVerify --> aVerify & uiButton & uiField & uiInput & centeredCard & backToLogin & skeleton & submit
+  pReactivate --> aReactivate & uiField & uiInput & centeredCard & backToLogin & skeleton & submit
 
   %% App
-  appLayout --> requireSession & appShell & tracker & sidebarUser & signOutBtn
+  appLayout --> requireSession & appShell & staleGuard & tracker & sidebarUser & signOutBtn
   pSettings --> uiCard & changeForm
+  pSettingsMain --> uiSettings & dangerZone & skeleton & profileSection & queries & privacySection & placeholders
+  placeholders --> uiButton & uiField & uiInput & uiSettings & uiToggle
 
   %% Landing
-  mLayout --> siteHeader & headerActions & footer
+  mLayout --> siteHeader & headerActions & footer & settingsBtn
   mPage --> hero & features & how & pricingSec & cta & scrollTop
   hero --> uiButton & intro
   features --> intro
@@ -2264,6 +2311,16 @@ flowchart LR
   plans --> uiButton & pricingTs
   cta --> uiButton
   footer --> logo
+
+  %% Cookie consent (privacy)
+  settingsBtn --> uiButton & events
+  prefsDialog --> consent & uiButton & uiDialog & uiToggle
+  banner --> consent & uiButton
+  cookieConsent --> consent & events & banner & prefsDialog
+  loader --> consent
+  policy --> settingsBtn
+  privacySection --> uiSettings & settingsBtn
+  pCookies --> policy
 ```
 
 ### 2. User journey
