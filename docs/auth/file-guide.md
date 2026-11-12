@@ -2010,6 +2010,25 @@ Buttons: **Save preferences** (saves the toggle), **Reject all** and **Accept al
 - `CookieConsent` comes before the page content so the banner is early in the keyboard tab order.
 - B7 changed only the inside of `<body>`; fonts, metadata and classes are as they were.
 
+#### `src/features/privacy/components/cookie-policy.tsx`
+
+**What it does:** The content of the cookie policy, in plain English: what cookies are; strictly necessary cookies; analytics (optional), including "Vercel Web Analytics and Plausible don't use cookies. We only load them if you allow analytics."; a table of every cookie; how to change your choice (with a **Cookie settings** button); how long choices last (6 months); and contact.
+
+**Runs on:** server (the `CookieSettingsButton` inside is a client component).
+
+**Exports:** `CookiePolicy`.
+
+**Depends on (imports):** `./cookie-settings-button`; packages `react` (types).
+
+**Used by (imported by):** `src/app/(marketing)/cookies/page.tsx`.
+
+**Security notes:** none. Copy rule: it never describes SpendSense as financial advice.
+
+**Notes:**
+- The cookie table (`COOKIES`) was checked against the code: session up to 7 days (`auth.config.ts`), CSRF and callback cookies for the browser session, Google sign-in state and PKCE cookies 15 minutes (Auth.js defaults), `ss_consent` about 6 months (`consent.ts`), and `_ga` / `_ga_<ID>` **2 years** (Google's GA4 documentation, checked 11 Nov 2026). `ss_consent` and the `_ga` cookies were also seen in the browser; the auth cookies weren't checked in DevTools yet (that needs a signed-in test account).
+- The table scrolls sideways inside its own box on small screens (keyboard-focusable, labelled), so the page itself never scrolls sideways.
+- "Contact page" links to `#` until a contact page exists (same as the footer).
+
 ---
 
 ## Database
