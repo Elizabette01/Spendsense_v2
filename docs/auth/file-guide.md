@@ -1496,6 +1496,25 @@ Buttons: **Cancel** (outline) and **Delete my account** (filled destructive, dis
 
 **Notes:** it returns rows, not a whole card, so the Settings page can put rows from other features (the imported-data placeholder) in the same Danger zone card without features importing each other.
 
+#### `profile-section.tsx`
+
+**What it does:** The Settings "Profile" card (Figma "Section-Profile"). It reads the session and shows the user's name and email in **disabled** fields with a disabled **Save** button and a "Coming soon" badge, because there's no action to save a profile yet. Also exports a skeleton for the `<Suspense>` fallback.
+
+**Runs on:** server (an async server component; the Settings page wraps it in `<Suspense>`).
+
+**Exports:** `ProfileSection`, `ProfileSectionSkeleton`.
+
+**Depends on (imports):** `@/lib/session` (`getSession`), `@/components/ui/button`, `form-field`, `input`, `settings-section`; packages `next/server` (`connection`).
+
+**Used by (imported by):** `src/app/(app)/settings/page.tsx`.
+
+**Security notes:** the name and email come from the validated session, never from the URL.
+
+**Notes:**
+- **Mock (marked `MOCK:` in the file):** saving needs an `updateProfile(prevState, formData)` action (field `name`). Changing the email needs its own verified-email flow.
+- Figma shows First name and Last name, but the `User` model has one `name`, so there's one field.
+- `await connection()` comes first, as in `sidebar-user.tsx`, because Auth.js uses `crypto` before reading the cookie.
+
 ### Auth pages (`src/app/(auth)/`)
 
 `(auth)` is a **route group**: the brackets organise files without adding to the URL, so `src/app/(auth)/login/page.tsx` is `/login`. Pages stay thin: they read the URL, pick a state and compose components from `features/auth/components`. Nothing imports a page; Next.js routes to it.
