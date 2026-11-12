@@ -1155,7 +1155,8 @@ These are the page frames used by more than one area. They never import from `fe
 
 **Notes:**
 - Opening the drawer moves focus to its close button. Escape or the close button returns focus to the hamburger (tested). When closed on mobile, the drawer is `invisible`, so it can't be tabbed into.
-- "Settings" links to `/settings/password` for now, because there's no `/settings` page yet. It's highlighted on any `/settings/*` URL.
+- "Settings" links to `/settings` (since B7; it used to go to `/settings/password` because `/settings` didn't exist). It's highlighted on `/settings` and any `/settings/*` URL.
+- The signed-in area has no footer, so its "Cookie settings" button lives on the Settings page (Privacy section) rather than here.
 - Budgets is in the list because the mobile frame shows it (the desktop frame doesn't).
 - Icons are the text glyphs from the design, with `\uFE0E` added to ask for text rather than emoji style. On Windows the "↑" may still render blue, which is only cosmetic.
 - `/transactions`, `/recurring`, `/imports`, `/insights` and `/budgets` currently render `PagePlaceholder`. (They used to 404, which dropped the sidebar and so lost the current-page highlight.)
