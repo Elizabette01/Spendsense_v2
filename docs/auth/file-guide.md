@@ -2067,9 +2067,9 @@ Buttons: **Save preferences** (saves the toggle), **Reject all** and **Accept al
 
 | Model (table) | What it holds | Written by | Read by |
 |---|---|---|---|
-| `User` (`users`) | `email` (unique), `name`, `emailVerified`, `image`, `role` (`USER`/`ADMIN`), `passwordHash` (null for Google-only accounts), `sessionVersion` (starts at 0), `lastActiveAt` | `register`, `verifyEmail`, `resetPassword`, `changePassword`, `credentials.ts` (rehash), `auth.ts` (`createUser` event), the Prisma adapter, `recordActivity` | `credentials.ts`, `auth.ts` `jwt` callback, the actions |
+| `User` (`users`) | `email` (unique), `name`, `emailVerified`, `image`, `role` (`USER`/`ADMIN`), `passwordHash` (null for Google-only accounts), `sessionVersion` (starts at 0), `lastActiveAt`, `deletionScheduledFor` (null unless deletion was requested; indexed) | `register`, `verifyEmail`, `resetPassword`, `changePassword`, `credentials.ts` (rehash), `auth.ts` (`createUser` event), the Prisma adapter, `recordActivity`, `requestAccountDeletion` (sets the schedule), `reactivateAccount` (clears it), the purge route (deletes the row) | `credentials.ts`, `auth.ts` `jwt` and `signIn` callbacks, `getDeletionProof`, the actions, the purge route |
 | `Account` (`accounts`) | One row per linked OAuth login (`provider` + `providerAccountId`, unique together), plus the provider's tokens | the Prisma adapter, on Google sign-in | the Prisma adapter |
-| `AuthToken` (`auth_tokens`) | `tokenHash` (unique), `type` (`EMAIL_VERIFICATION` / `PASSWORD_RESET`), `expiresAt`, `userId` | `src/lib/tokens.ts`, `resetPassword` (deletes all of a user's tokens) | `src/lib/tokens.ts` |
+| `AuthToken` (`auth_tokens`) | `tokenHash` (unique), `type` (`EMAIL_VERIFICATION` / `PASSWORD_RESET` / `ACCOUNT_REACTIVATION`), `expiresAt`, `userId` | `src/lib/tokens.ts`, `resetPassword` (deletes all of a user's tokens) | `src/lib/tokens.ts` |
 | `RateLimit` (`rate_limits`) | `key` (e.g. `signin:email:<sha256>`), `count`, `resetAt` (timestamptz) | `src/lib/rate-limit.ts` (raw SQL upsert) | the same |
 | `ActivityEvent` (`activity_events`) | `type` (`SIGN_UP`, `ACTIVE_DAY`, `CHAT_MESSAGE`), `userId` (optional), `createdAt` | `register`, `auth.ts` `createUser` event, `recordActivity` | future admin analytics |
 
@@ -2082,13 +2082,16 @@ Buttons: **Save preferences** (saves the toggle), **Reject all** and **Accept al
 **Security notes:**
 - Passwords and tokens are stored only as hashes (Argon2id and SHA-256). Rate-limit keys hash emails and IPs.
 - `sessionVersion` is the "kill switch": incrementing it makes every existing JWT fail the `jwt` callback check.
-- Deleting a user cascades to their `Account` and `AuthToken` rows (`onDelete: Cascade`). Their `ActivityEvent` rows are kept with `userId` set to null (`onDelete: SetNull`), so analytics totals survive account deletion.
+- `deletionScheduledFor` is a second lock: while it's set, the `jwt` callback, password sign-in and Google sign-in all refuse the user. The index lets the purge job find due accounts without scanning every user.
+- Deleting a user cascades to their `Account` and `AuthToken` rows, and to their categories, statements, transactions and subscription (`onDelete: Cascade`). Their `ActivityEvent` and `AuditLog` rows are kept with the user reference set to null (`onDelete: SetNull`), so analytics totals and the audit trail survive account deletion.
 - `@@unique([provider, providerAccountId])` stops one Google account being attached twice.
 
 **Notes:**
 - `Account` stores Google's `access_token`, `refresh_token` and `id_token` in plain text (the Prisma adapter's standard schema). SpendSense doesn't use them after sign-in. If they're ever needed, consider encrypting them, or don't keep them at all.
 - `email` is optional (`String?`) because Auth.js's adapter schema allows providers without email. Every SpendSense sign-in method does supply one.
 - There's no `Session` table: sessions are JWTs in a cookie (`strategy: "jwt"`).
+- Migration `20261110195400_add_account_deletion_schedule` added `deletion_scheduled_for` (with its index) and the `ACCOUNT_REACTIVATION` token type.
+- The cookie-consent choice is **not** stored in the database. It lives only in the visitor's `ss_consent` cookie, because most visitors who choose aren't signed in.
 
 ---
 
