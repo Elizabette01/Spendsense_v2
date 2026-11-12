@@ -7,9 +7,16 @@ import { FormAlert } from "@/components/ui/form-alert";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "./password-input";
+import { SendNewLinkLink } from "./send-new-link-link";
 import { SubmitButton } from "./submit-button";
 
 const initialState: SignInState = { status: "idle" };
+
+// FRAGILE: must match the account_pending_deletion message in
+// actions/sign-in.ts exactly. If that text changes, the "Send a new link"
+// link silently stops showing. Better: the action returns a `code` to match on.
+const PENDING_DELETION_MESSAGE =
+  "This account is scheduled for deletion. Use the link in your email to reactivate it.";
 
 /** Email + password sign-in (Figma "Login-page" form). */
 export function LoginForm({ callbackUrl }: { callbackUrl?: string }) {
@@ -29,6 +36,12 @@ export function LoginForm({ callbackUrl }: { callbackUrl?: string }) {
       {state.status === "error" && (
         <FormAlert tone="error" ref={alertRef}>
           {state.message}
+          {state.message === PENDING_DELETION_MESSAGE && (
+            <>
+              {" "}
+              <SendNewLinkLink />
+            </>
+          )}
         </FormAlert>
       )}
 

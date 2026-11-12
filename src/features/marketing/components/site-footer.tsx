@@ -1,11 +1,16 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { Logo } from "@/components/layout/logo";
 
 const linkStyles =
   "rounded-control text-nav text-foreground-secondary hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
 
-/** Landing page footer (Figma "Footer") plus the required regulatory note. */
-export function SiteFooter() {
+/**
+ * Landing page footer (Figma "Footer") plus the required regulatory note.
+ * `cookieSettings` is the "Cookie settings" button from the privacy feature,
+ * passed in by the layout (features don't import each other).
+ */
+export function SiteFooter({ cookieSettings }: { cookieSettings?: ReactNode }) {
   return (
     <footer className="border-t border-border bg-card">
       <div className="mx-auto flex max-w-300 flex-col gap-6 px-4 py-8 sm:px-8">
@@ -13,7 +18,7 @@ export function SiteFooter() {
           <Logo />
           {/* Privacy, Terms and Contact pages don't exist yet */}
           <nav aria-label="Footer">
-            <ul className="flex gap-8">
+            <ul className="flex flex-wrap justify-center gap-x-8 gap-y-3">
               <li>
                 <Link href="#" className={linkStyles}>
                   Privacy Policy
@@ -29,6 +34,12 @@ export function SiteFooter() {
                   Contact
                 </Link>
               </li>
+              <li>
+                <Link href="/cookies" className={linkStyles}>
+                  Cookie policy
+                </Link>
+              </li>
+              {cookieSettings && <li>{cookieSettings}</li>}
             </ul>
           </nav>
         </div>
