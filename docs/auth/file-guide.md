@@ -2510,6 +2510,47 @@ stateDiagram-v2
   end note
 ```
 
+### 7. Request flow: deleting an account
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as Browser
+  participant S as /settings
+  participant DD as Delete account dialog
+  participant A as requestAccountDeletion
+  participant D as Database
+  participant M as Email (Resend)
+  participant C as /api/session/clear
+  participant L as /login
+  U->>S: opens Settings
+  S->>D: getDeletionProof() (password or email?)
+  S-->>U: Danger zone (proof decides which field the dialog shows)
+  U->>DD: Delete account (focus starts on Cancel)
+  U->>A: password, or account email
+  A->>A: auth() (must be signed in), rate-limit per user
+  A->>D: find user: passwordHash, email
+  alt has a password
+    A->>A: verifyPassword (Argon2)
+  else Google-only
+    A->>A: typed email == account email?
+  end
+  alt proof wrong
+    A-->>DD: error + field error (dialog stays open)
+  else proof right
+    A->>D: deletionScheduledFor = now + 48h, sessionVersion + 1
+    A->>D: createAuthToken(ACCOUNT_REACTIVATION)
+    Note over A,M: after()
+    A->>M: "scheduled for deletion" + reactivation link
+    A->>A: signOut()
+    A-->>U: redirect /api/session/clear?reason=deletion-scheduled
+    U->>C: GET
+    C-->>U: Clear-Site-Data: "cookies" + expire session cookie, redirect
+    U->>L: /login?status=deletion-scheduled
+    L-->>U: "scheduled for deletion… reactivate within 2 days" banner (cookie banner shows again)
+  end
+```
+
 ### Reading the diagrams
 
 In the **dependency map**, an arrow means "imports". Follow arrows from a page down to see everything it relies on, or look for arrows *into* a box to see who would be affected if you changed it (for example, `db.ts` and `auth.ts` have the most arrows in). The boxes group files by layer: config at the edge of the framework, the library underneath, feature logic in the middle, UI on top, and the database at the bottom. Nothing in **Library** or **Shared UI** points into a feature, which is the "shared code doesn't depend on features" rule. In the **user journey**, solid arrows are the normal paths and the dotted arrow is an error path. In the **sequence diagrams**, time runs top to bottom: solid arrows are calls, dashed arrows are replies, `alt` boxes show the different outcomes, and `Note … after()` marks work that happens after the browser already has its response.
