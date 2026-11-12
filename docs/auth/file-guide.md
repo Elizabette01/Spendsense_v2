@@ -945,11 +945,11 @@ The UI files were built in B6 from the Figma file (`mgf2GJR0QdxCas9EqRDXaK`). Th
 
 ### Shared UI primitives (`src/components/ui/`)
 
-These are small building blocks with no auth knowledge, so any feature can use them. They're plain components (no `"use client"`), so they work in both server and client components.
+These are small building blocks with no auth knowledge, so any feature can use them. Most are plain components (no `"use client"`), so they work in both server and client components. `dialog.tsx` and `toggle.tsx` are client components because they handle clicks and keyboard input.
 
 #### `src/components/ui/button.tsx`
 
-**What it does:** One visual style for buttons and button-looking links. `buttonStyles()` builds the class list from a variant (`primary`, `secondary`, `outline`, `ghost`, `inverse`) and a size (`md` 44px, `lg` 48px), so a `<button>` and a `<Link>` can look identical.
+**What it does:** One visual style for buttons and button-looking links. `buttonStyles()` builds the class list from a variant (`primary`, `secondary`, `outline`, `ghost`, `inverse`, `destructive`, `destructive-outline`) and a size (`md` 44px, `lg` 48px), so a `<button>` and a `<Link>` can look identical.
 
 **Runs on:** both.
 
@@ -960,11 +960,11 @@ These are small building blocks with no auth knowledge, so any feature can use t
 
 **Depends on (imports):** packages `next/link`. Env: none.
 
-**Used by (imported by):** `src/features/auth/components/submit-button.tsx`, `header-auth-actions.tsx`, `signup-form.tsx`; `src/app/(auth)/reset-password/page.tsx`, `verify-email/page.tsx`; `src/features/marketing/components/hero.tsx`, `cta.tsx`, `pricing-plans.tsx`.
+**Used by (imported by):** `src/features/auth/components/submit-button.tsx`, `header-auth-actions.tsx`, `signup-form.tsx`, `delete-account-dialog.tsx`, `profile-section.tsx`; `src/app/(auth)/reset-password/page.tsx`, `verify-email/page.tsx`; `src/app/(app)/settings/_components/placeholder-sections.tsx`; `src/features/marketing/components/hero.tsx`, `cta.tsx`, `pricing-plans.tsx`; `src/features/privacy/components/cookie-banner.tsx`, `cookie-preferences-dialog.tsx`, `cookie-settings-button.tsx`.
 
 **Security notes:** none.
 
-**Notes:** `primary` matches Figma "Button/Primary"; `secondary` is "Button/Secondary" (green outline); `inverse` is a white button for green backgrounds that stays white in dark mode (brand-800 text, about 10:1); `outline` uses `foreground-subtle` for its border so the edge meets the 3:1 contrast rule for UI components (the Figma grey border didn't). Every variant has a visible `focus-visible` outline.
+**Notes:** `destructive` (filled, for the final "Delete my account") and `destructive-outline` (for buttons that only *open* a dangerous flow) were added in B7. Light mode uses white text on `destructive` (5.4:1); dark mode's `destructive` is too light for white, so the text switches to the page background colour with `dark:text-background` (7.2:1). `primary` matches Figma "Button/Primary"; `secondary` is "Button/Secondary" (green outline); `inverse` is a white button for green backgrounds that stays white in dark mode (brand-800 text, about 10:1); `outline` uses `foreground-subtle` for its border so the edge meets the 3:1 contrast rule for UI components (the Figma grey border didn't). Every variant has a visible `focus-visible` outline.
 
 #### `src/components/ui/input.tsx`
 
