@@ -11,6 +11,7 @@ This guide is a map of every file that takes part in signing users up, signing t
 - [`src/types/next-auth.d.ts`](#srctypesnext-authdts)
 - [`src/app/api/auth/[...nextauth]/route.ts`](#srcappapiauthnextauthroutets)
 - [`src/app/api/session/clear/route.ts`](#srcappapisessionclearroutets)
+- [`src/app/api/cron/purge-deleted-accounts/route.ts`](#srcappapicronpurge-deleted-accountsroutets)
 - [`next.config.ts` (auth-related parts)](#nextconfigts-auth-related-parts)
 
 **Library (`src/lib/`)**
@@ -203,6 +204,35 @@ This guide is a map of every file that takes part in signing users up, signing t
 - Browsers only honour `Clear-Site-Data` on secure origins (HTTPS, or `localhost` in development). That's why the by-name fallback matters.
 - Because it's a plain `GET`, any site could link someone to it and sign them out. The harm is small (they just sign in again), and a `GET` is needed because it's reached by redirect.
 - `src/proxy.ts`'s matcher skips `/api`, so the proxy doesn't run for this route.
+
+### `src/app/api/cron/purge-deleted-accounts/route.ts`
+
+**What it does:** The job that actually deletes accounts once their grace period is over. A scheduler calls it with a secret; it finds up to 100 users whose `deletionScheduledFor` has passed, deletes each one (the database cascades to their data), sends each a final "your account has been deleted" email, and replies with counts only.
+
+**Runs on:** server only (a route handler, served at `/api/cron/purge-deleted-accounts`).
+
+**Exports:**
+- `GET(request)`: checks the secret, purges one batch, returns `{ deleted, failed, moreRemaining }`.
+
+**Depends on (imports):**
+- Internal: `@/lib/db` (find and delete users), `@/lib/email` (`sendAccountDeletedEmail`).
+- Packages: `node:crypto` (`timingSafeEqual`), `next/server`.
+- Environment variables read: `CRON_SECRET`.
+
+**Used by (imported by):** nothing imports it. It's meant to be called by a daily Vercel cron, which isn't configured yet (no `vercel.json`; it's on the Step 9 checklist).
+
+**Security notes:**
+- **Fails closed:** if `CRON_SECRET` isn't set, every request gets `401`.
+- The `Authorization: Bearer <secret>` header is compared with `timingSafeEqual`, so response timing doesn't leak how much of a guess was right. (The length check runs first; that only reveals the length, which is fixed at 64 hex characters anyway.)
+- **Race with reactivation:** the delete is `deleteMany` with the deadline check repeated in its `where`. If the user reactivated after the `findMany`, `count` is 0 and they're skipped.
+- The response contains counts only, never emails or ids, and logs contain error messages only.
+
+**Notes:**
+- Related data: `Account`, `AuthToken`, statements, transactions, categories and the subscription are deleted with the user (`onDelete: Cascade`). `ActivityEvent` and `AuditLog` rows are kept with the user reference set to `null` (`onDelete: SetNull`), so usage counts and the audit trail survive without pointing at a person.
+- One batch per call: if more than 100 accounts are due, `moreRemaining` is `true` and the rest wait for the next run.
+- The email goes out *after* the delete, using the address read beforehand. If the email fails, the deletion still stands.
+- A comment marks where Stripe subscriptions must be cancelled before Stripe goes live.
+- `.env.example` lists `CRON_SECRET` twice (lines 22 and 28). Harmless, but one can go.
 
 ### `next.config.ts` (auth-related parts)
 
