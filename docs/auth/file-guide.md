@@ -633,12 +633,12 @@ The B6 test "`/login?callbackUrl=//evil.com` → sign in → lands on `/dashboar
 
 ### `src/features/auth/credentials.ts`
 
-**What it does:** The `authorize` function behind email-and-password sign-in. Auth.js calls it with the submitted email and password, and it decides whether they're valid. Its steps run in a deliberate order: validate input → rate-limit by email and IP → look up the user → do the same password-hashing work whether or not the user exists → only after a correct password, say "verify your email first" if needed → upgrade an outdated hash → return just the fields the session needs.
+**What it does:** The `authorize` function behind email-and-password sign-in. Auth.js calls it with the submitted email and password, and it decides whether they're valid. Its steps run in a deliberate order: validate input → rate-limit by email and IP → look up the user → do the same password-hashing work whether or not the user exists → only after a correct password, say "this account is scheduled for deletion" or "verify your email first" if needed → upgrade an outdated hash → return just the fields the session needs.
 
 **Runs on:** server only (`import "server-only"`).
 
 **Exports:**
-- `authorizeCredentials(credentials)`: returns a `User` (`id`, `name`, `email`, `image`, `role`, `sessionVersion`) or `null`, or throws `CredentialsSignin` subclasses with the codes `email_not_verified` or `rate_limited`.
+- `authorizeCredentials(credentials)`: returns a `User` (`id`, `name`, `email`, `image`, `role`, `sessionVersion`) or `null`, or throws `CredentialsSignin` subclasses with the codes `account_pending_deletion`, `email_not_verified` or `rate_limited`.
 
 **Depends on (imports):**
 - Internal: `@/lib/db`, `@/lib/rate-limit`, `@/lib/password`, `@/lib/password-rules`, `@/lib/request`, `./schemas` (`emailSchema`).
@@ -649,13 +649,17 @@ The B6 test "`/login?callbackUrl=//evil.com` → sign in → lands on `/dashboar
 - `src/auth.ts` (the Credentials provider's `authorize`). It runs when `signInWithPassword` calls `signIn("credentials", …)`.
 
 **Security notes:**
-- **Enumeration:** unknown emails and Google-only accounts (no `passwordHash`) still run a full Argon2 verification against a dummy hash, then return `null`, so the response and its timing match "wrong password". The "verify your email first" message is only revealed *after* a correct password, so it leaks nothing to someone guessing.
+- **Enumeration:** unknown emails and Google-only accounts (no `passwordHash`) still run a full Argon2 verification against a dummy hash, then return `null`, so the response and its timing match "wrong password". The "scheduled for deletion" and "verify your email first" messages are only revealed *after* a correct password, so they leak nothing to someone guessing.
+- **Deletion grace period:** a scheduled account can't sign in with its password, even the right one. The check comes before the email-verified check, so a scheduled account always gets the message that tells them how to undo it.
 - **Rate limits** run before any lookup or hashing, so brute force is cheap to refuse.
 - **Over-long passwords** (more than 128 characters) are rejected before hashing.
 - **Rehash on sign-in:** if the Argon2 settings are ever raised, users are upgraded quietly the next time they sign in. A failed rehash is logged and doesn't block the sign-in.
 - Returns only what the session needs; `passwordHash` never leaves this function.
 
-**Notes:** `null` becomes a plain `CredentialsSignin` in `sign-in.ts`, which shows "Email or password is incorrect.". The two custom codes map to their own messages there.
+**Notes:**
+- `null` becomes a plain `CredentialsSignin` in `sign-in.ts`, which shows "Email or password is incorrect.". The three custom codes map to their own messages there.
+- A scheduled account returns before step 7, so its hash isn't upgraded during the grace period. That's fine; it happens on the first sign-in after reactivation.
+- The `@/lib/password-rules` import ends with a stray `, }` (cosmetic only).
 
 ### `src/features/auth/activity-tracker.tsx`
 
@@ -717,6 +721,7 @@ There are two styles:
 **What it does:** Two actions. `signInWithPassword` calls `signIn("credentials", …)` with the email, password and a `redirectTo` from `safeCallbackUrl(formData.get("callbackUrl"))`. On failure it turns Auth.js errors into fixed messages:
 - `email_not_verified` → "Please verify your email first…"
 - `rate_limited` → "Too many attempts…"
+- `account_pending_deletion` → "This account is scheduled for deletion. Use the link in your email to reactivate it."
 - any other credentials failure → "Email or password is incorrect."
 - other Auth.js errors → "Something went wrong."
 
@@ -737,7 +742,10 @@ There are two styles:
 
 **Security notes:** non-Auth.js errors are re-thrown. That matters because a successful `signIn()` "fails" by throwing Next's redirect, and swallowing it would break sign-in. Messages come only from a fixed list.
 
-**Notes:** the final `return { status: "idle" }` is never reached in practice, because success always throws the redirect.
+**Notes:**
+- The final `return { status: "idle" }` is never reached in practice, because success always throws the redirect.
+- `login-form.tsx` shows a "Send a new link" link when the message is exactly the `account_pending_deletion` text. That's fragile (changing the wording here silently removes the link). Returning a `code` in `SignInState` alongside `message` would be sturdier.
+- The `account_pending_deletion` line has one extra leading space (cosmetic only).
 
 #### `actions/sign-out.ts`
 
