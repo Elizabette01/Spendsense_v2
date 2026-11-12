@@ -1357,7 +1357,7 @@ UI used only by the auth feature. They import the server actions directly. Clien
 
 **Depends on (imports):** `../actions/change-password`, `@/lib/password-rules`, `@/components/ui/form-alert`, `form-field`, `./password-input`, `./submit-button`; packages `react`.
 
-**Used by (imported by):** `src/app/(app)/settings/password/page.tsx`.
+**Used by (imported by):** `src/app/(app)/settings/password/page.tsx`, `./danger-zone.tsx` (the Change password row on `/settings`).
 
 **Security notes:** the Google-only account message comes from the server and is shown as-is.
 
