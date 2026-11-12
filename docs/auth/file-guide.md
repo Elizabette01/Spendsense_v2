@@ -44,6 +44,7 @@ This guide is a map of every file that takes part in signing users up, signing t
 - [App area (`src/app/(app)/`)](#app-area-srcappapp)
 - [Landing page (`src/app/(marketing)/` and `src/features/marketing/`)](#landing-page-srcappmarketing-and-srcfeaturesmarketing)
 - [Images (`public/images/auth/`)](#images-publicimagesauth)
+- [Cookie consent and analytics (`src/features/privacy/`)](#cookie-consent-and-analytics-srcfeaturesprivacy)
 
 **Database**
 - [Auth models in `prisma/schema.prisma`](#auth-models-in-prismaschemaprisma)
@@ -1866,6 +1867,29 @@ The landing page has no auth logic of its own, but it's the front door to sign-u
 **Used by:** `src/features/auth/components/auth-centered-card.tsx` (the three icons), `signup-form.tsx` (`email-open.svg` on the success view), `google-button.tsx` (`google-g.svg`).
 
 **Security notes:** none. They're static files served as-is, and all are decorative (`alt=""`).
+
+### Cookie consent and analytics (`src/features/privacy/`)
+
+Built in B7 on top of `src/lib/consent.ts`. Nothing here has a Figma frame; it's built from the existing card, modal and toggle styles. Three rules shape every file:
+- **The server never reads the consent cookie.** The banner and the loader are client components that read it after the page loads, so the landing page and `/cookies` stay prerendered.
+- **No hydration mismatch.** On the server and on the first render in the browser they render nothing; they decide in `useEffect`, after mount.
+- **Nothing optional loads before a choice**, and Reject all is exactly as easy and prominent as Accept all.
+
+#### `src/features/privacy/events.ts`
+
+**What it does:** The shared "open the cookie settings dialog" signal. `openCookieSettings()` fires a browser event called `ss:open-cookie-settings`; the one `CookieConsent` in the root layout listens for it and opens the dialog. Any "Cookie settings" button anywhere just calls this function.
+
+**Runs on:** browser (it uses `window`; only called from click handlers).
+
+**Exports:** `OPEN_COOKIE_SETTINGS_EVENT` (`"ss:open-cookie-settings"`), `openCookieSettings()`.
+
+**Depends on (imports):** none. Env: none.
+
+**Used by (imported by):** `./components/cookie-consent.tsx` (listens; also the banner's Manage preferences), `./components/cookie-settings-button.tsx` (fires).
+
+**Security notes:** none. Any script on the page could fire the event, but all it does is open the dialog.
+
+**Notes:** why an event and not React context: the buttons sit inside server-rendered footers and pages. A context would need a client provider around the whole app; an event needs nothing.
 
 ---
 
