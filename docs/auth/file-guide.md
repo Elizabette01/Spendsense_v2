@@ -1951,6 +1951,24 @@ Buttons: **Save preferences** (saves the toggle), **Reject all** and **Accept al
 - `role="region"` with `aria-label="Cookie consent"`. It never grabs focus; it comes early in the tab order instead (it's rendered before the page content), and the page stays usable behind it.
 - While it shows, it adds bottom padding to `<body>` equal to its own height (measured with a `ResizeObserver`), and removes it when it closes. Without that, it covered the footer even when scrolled to the very end, which also fails WCAG 2.2 "Focus Not Obscured".
 
+#### `src/features/privacy/components/cookie-consent.tsx`
+
+**What it does:** The one component that owns the banner and the preferences dialog for the whole site. After mount it reads `ss_consent`; if there's no valid choice it shows the banner. It listens for `CONSENT_CHANGED_EVENT` (to hide the banner once a choice is saved) and for `ss:open-cookie-settings` (to open the dialog, pre-set from the current saved choice).
+
+**Runs on:** browser too (`"use client"`).
+
+**Exports:** `CookieConsent`.
+
+**Depends on (imports):** `@/lib/consent` (`CONSENT_CHANGED_EVENT`, `readConsentFromDocument`), `../events`, `./cookie-banner`, `./cookie-preferences-dialog`; packages `react`.
+
+**Used by (imported by):** `src/app/layout.tsx` (once, at the top of `<body>`).
+
+**Security notes:** none of its own. "No decision" (including tampered or expired cookies) always means "show the banner", never "assume yes" (tested by editing `ss_consent` by hand).
+
+**Notes:**
+- It renders nothing on the server and on the first browser render, so the HTML always matches and the landing page stays static.
+- The dialog only mounts after it's first opened, and gets a new `key` each time, so it always starts from the current saved choice.
+
 ---
 
 ## Database
