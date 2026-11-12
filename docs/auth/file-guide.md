@@ -1891,6 +1891,22 @@ Built in B7 on top of `src/lib/consent.ts`. Nothing here has a Figma frame; it's
 
 **Notes:** why an event and not React context: the buttons sit inside server-rendered footers and pages. A context would need a client provider around the whole app; an event needs nothing.
 
+#### `src/features/privacy/components/cookie-settings-button.tsx`
+
+**What it does:** The "Cookie settings" control. It's a `<button>`, not a link, because it opens something instead of going somewhere. `look="link"` (the default) styles it like the footer links; `look="button"` makes it an outline button for pages.
+
+**Runs on:** browser too (`"use client"`; it has a click handler).
+
+**Exports:** `CookieSettingsButton({ look? })`.
+
+**Depends on (imports):** `@/components/ui/button`, `../events` (`openCookieSettings`).
+
+**Used by (imported by):** `src/app/(marketing)/layout.tsx` (footer slot), `./cookie-policy.tsx` ("How to change your choice"), `./privacy-settings-section.tsx` (Settings).
+
+**Security notes:** none.
+
+**Notes:** it only works once the page has loaded its JavaScript (it needs `CookieConsent` listening). Before that, a click does nothing. That's fine, since the dialog needs JavaScript anyway.
+
 ---
 
 ## Database
