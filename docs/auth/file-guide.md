@@ -37,7 +37,7 @@ This guide is a map of every file that takes part in signing users up, signing t
 - [Server actions (`src/features/auth/actions/`)](#server-actions-srcfeaturesauthactions)
 
 **UI**
-- [Shared UI primitives (`src/components/ui/`)](#shared-ui-primitives-srccomponentsui)
+- [Shared UI primitives (`src/components/ui/`)](#shared-ui-primitives-srccomponentsui) (including the new `dialog`, `toggle` and `settings-section`)
 - [Shared layout (`src/components/layout/`)](#shared-layout-srccomponentslayout)
 - [Auth components (`src/features/auth/components/`)](#auth-components-srcfeaturesauthcomponents)
 - [Auth pages (`src/app/(auth)/`)](#auth-pages-srcappauth)
@@ -1032,6 +1032,27 @@ These are small building blocks with no auth knowledge, so any feature can use t
 **Security notes:** none.
 
 **Notes:** only one page uses it so far. It lives in `ui/` because the brief listed card as a shared primitive.
+
+#### `src/components/ui/dialog.tsx`
+
+**What it does:** A modal dialog styled from the Figma "Edit Budget Modal": title, optional description and ✕ at the top, a divider, the content, then a buttons row. It's built on the browser's native `<dialog>` with `showModal()`, which already traps Tab inside the dialog, makes the page behind it inert, closes on Escape and draws the dimmed backdrop. The component adds the rest: it opens and closes with the `open` prop, moves focus to a chosen element when it opens, returns focus to whatever opened it when it closes, and closes on a backdrop click.
+
+**Runs on:** browser (`"use client"`).
+
+**Exports:**
+- `Dialog({ open, onClose, title, description?, children?, footer?, initialFocusRef? })`.
+
+**Depends on (imports):** packages `react`. Env: none.
+
+**Used by (imported by):** `src/features/auth/components/delete-account-dialog.tsx`, `src/features/privacy/components/cookie-preferences-dialog.tsx`.
+
+**Security notes:** none. (For destructive dialogs, pass `initialFocusRef` pointing at **Cancel** so Enter never confirms by accident.)
+
+**Notes:**
+- `onClose` is called for every way of closing (✕, Escape, backdrop, your own buttons), because the component listens for the native `close` event.
+- `aria-labelledby` and `aria-describedby` point at the title and description, so screen readers announce both when it opens.
+- Tailwind's reset removes the browser's default centring margin, so the dialog sets `m-auto` itself.
+- Parents give it a new `key` each time it opens, so fields and errors start fresh.
 
 ### Shared layout (`src/components/layout/`)
 
