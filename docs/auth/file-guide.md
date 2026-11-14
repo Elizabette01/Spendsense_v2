@@ -1,6 +1,6 @@
 # SpendSense authentication: file guide
 
-This guide is a map of every file that takes part in signing users up, signing them in, keeping them signed in and signing them out, plus the landing page that leads into it. Each file has one entry, written from reading the code as it is on the `feat/landing-and-auth-pages` branch. Entries are grouped from the bottom up: configuration first, then the shared library, the auth feature logic, the pages and components, and finally the database tables. "Used by" lists come from searching the codebase for imports, so they show real connections. If you want the big picture first, jump to [How it all connects](#how-it-all-connects) at the end, then come back to the files.
+This guide is a map of every file that takes part in signing users up, signing them in, keeping them signed in and signing them out, plus the landing page that leads into it. Since B7 it also covers account deletion (request, grace period, reactivation and purge), the Settings page and cookie consent with analytics loading. Each file has one entry, written from reading the code as it is (B6 on `feat/landing-and-auth-pages`, B7 on `feat/privacy-ui`). Entries are grouped from the bottom up: configuration first, then the shared library, the auth feature logic, the pages and components, and finally the database tables. "Used by" lists come from searching the codebase for imports, so they show real connections. If you want the big picture first, jump to [How it all connects](#how-it-all-connects) at the end, then come back to the files.
 
 ## Contents
 
@@ -10,6 +10,8 @@ This guide is a map of every file that takes part in signing users up, signing t
 - [`src/proxy.ts`](#srcproxyts)
 - [`src/types/next-auth.d.ts`](#srctypesnext-authdts)
 - [`src/app/api/auth/[...nextauth]/route.ts`](#srcappapiauthnextauthroutets)
+- [`src/app/api/session/clear/route.ts`](#srcappapisessionclearroutets)
+- [`src/app/api/cron/purge-deleted-accounts/route.ts`](#srcappapicronpurge-deleted-accountsroutets)
 - [`next.config.ts` (auth-related parts)](#nextconfigts-auth-related-parts)
 
 **Library (`src/lib/`)**
@@ -21,22 +23,28 @@ This guide is a map of every file that takes part in signing users up, signing t
 - [`src/lib/email.ts`](#srclibemailts)
 - [`src/lib/request.ts`](#srclibrequestts)
 - [`src/lib/activity.ts`](#srclibactivityts)
+- [`src/lib/account-deletion.ts`](#srclibaccount-deletionts)
+- [`src/lib/session.ts`](#srclibsessionts)
+- [`src/lib/consent.ts`](#srclibconsentts)
 
 **Feature logic (`src/features/auth/`)**
 - [`src/features/auth/schemas.ts`](#srcfeaturesauthschemasts)
 - [`src/features/auth/redirect.ts`](#srcfeaturesauthredirectts)
 - [`src/features/auth/credentials.ts`](#srcfeaturesauthcredentialsts)
 - [`src/features/auth/activity-tracker.tsx`](#srcfeaturesauthactivity-trackertsx)
+- [`src/features/auth/queries.ts`](#srcfeaturesauthqueriests)
+- [`src/features/auth/stale-session-guard.tsx`](#srcfeaturesauthstale-session-guardtsx)
 - [Server actions (`src/features/auth/actions/`)](#server-actions-srcfeaturesauthactions)
 
 **UI**
-- [Shared UI primitives (`src/components/ui/`)](#shared-ui-primitives-srccomponentsui)
+- [Shared UI primitives (`src/components/ui/`)](#shared-ui-primitives-srccomponentsui) (including the new `dialog`, `toggle` and `settings-section`)
 - [Shared layout (`src/components/layout/`)](#shared-layout-srccomponentslayout)
 - [Auth components (`src/features/auth/components/`)](#auth-components-srcfeaturesauthcomponents)
-- [Auth pages (`src/app/(auth)/`)](#auth-pages-srcappauth)
+- [Auth pages (`src/app/(auth)/`)](#auth-pages-srcappauth) (including `/reactivate-account`)
 - [App area (`src/app/(app)/`)](#app-area-srcappapp)
 - [Landing page (`src/app/(marketing)/` and `src/features/marketing/`)](#landing-page-srcappmarketing-and-srcfeaturesmarketing)
 - [Images (`public/images/auth/`)](#images-publicimagesauth)
+- [Cookie consent and analytics (`src/features/privacy/`)](#cookie-consent-and-analytics-srcfeaturesprivacy)
 
 **Database**
 - [Auth models in `prisma/schema.prisma`](#auth-models-in-prismaschemaprisma)
@@ -88,19 +96,23 @@ This guide is a map of every file that takes part in signing users up, signing t
 
 **Used by (imported by):**
 - `src/app/api/auth/[...nextauth]/route.ts` (`handlers`)
-- `src/features/auth/actions/sign-in.ts` (`signIn`), `sign-out.ts` (`signOut`), `change-password.ts` (`auth`, `signOut`)
+- `src/features/auth/actions/sign-in.ts` (`signIn`), `sign-out.ts` (`signOut`), `change-password.ts` and `delete-account.ts` (`auth`, `signOut`)
 - `src/proxy.ts` (`auth` as the proxy wrapper)
-- `src/features/auth/activity-tracker.tsx`, `src/features/auth/components/header-auth-actions.tsx`, `sidebar-user.tsx`, `require-session.tsx` (`auth`)
+- `src/lib/session.ts` (`auth`, wrapped in `cache()` as `getSession`)
+- `src/features/auth/components/header-auth-actions.tsx`, `sidebar-user.tsx`, `require-session.tsx` (`auth`)
 
 **Security notes:**
-- `callbacks.signIn`: a Google sign-in is refused unless Google says the email is verified (`email_verified === true`), so nobody can claim an address they don't own.
-- `callbacks.jwt`: on sign-in it copies `role` and `sessionVersion` into the token. On every later `auth()` call it re-reads the user's `sessionVersion` and `role` from the database and returns `null` (signed out) if the user is gone or the version changed. This is how a password reset or change kills every other session.
+- `callbacks.signIn`: a Google sign-in is refused unless Google says the email is verified (`email_verified === true`), so nobody can claim an address they don't own. It then looks up the linked account by its compound key `provider_providerAccountId`; if that user is scheduled for deletion, it sends them to `/login?error=AccountPendingDeletion` instead of signing them in. (Written as guard clauses: each check returns early.)
+- `callbacks.jwt`: on sign-in it copies `role` and `sessionVersion` into the token. On every later `auth()` call it re-reads the user's `sessionVersion`, `role` and `deletionScheduledFor` from the database and returns `null` (signed out) if the user is gone, the version changed, or the account is scheduled for deletion. This is how a password reset, password change or deletion request kills every session.
 - `events.createUser` (runs when the adapter creates a user, i.e. a first Google sign-in): sets `emailVerified` and records a `SIGN_UP` activity event in one transaction.
 - No automatic account linking is configured, so a Google sign-in for an email that already has a password account fails with `OAuthAccountNotLinked` (shown as a banner on `/login`).
 
 **Notes:**
 - Because the `jwt` callback queries the database on every `auth()` call, each request that carries a session cookie costs a small query in the proxy, plus one for each `auth()` call while rendering. That's the price of instant session revocation.
 - Credentials sign-ins don't go through `events.createUser`; `register` creates those users and their `SIGN_UP` event itself.
+- During the deletion grace period there are three locks: the `jwt` callback (existing sessions), `authorizeCredentials` (password sign-in) and `callbacks.signIn` (Google). Only the emailed reactivation link clears `deletionScheduledFor`.
+- The Google deletion check only finds users who have **already** linked Google. A first-time Google sign-in has no linked account yet, so it falls through to Auth.js's usual `OAuthAccountNotLinked` handling for an existing email. That's the correct outcome; it just isn't this check that stops it.
+- Formatting is a little uneven (stray indentation before `adapter`, `providers` and `events`, trailing spaces). Cosmetic only.
 
 ### `src/proxy.ts`
 
@@ -168,9 +180,66 @@ This guide is a map of every file that takes part in signing users up, signing t
 
 **Notes:** the folder name contains square brackets, so in PowerShell use `-LiteralPath` with it.
 
+### `src/app/api/session/clear/route.ts`
+
+**What it does:** A small `GET` route that wipes this browser's cookies and then redirects. It exists because **server actions can't set custom response headers**, and `Clear-Site-Data` is a header. The delete-account action and the stale-session guard send the browser here, and this route does the clean-up they can't.
+
+**Runs on:** server only (a route handler, served at `/api/session/clear`).
+
+**Exports:**
+- `GET(request)`: reads `?reason=`, picks the destination from an allowlist, and returns a redirect carrying the clean-up headers.
+
+**Depends on (imports):**
+- Internal: none.
+- Packages: `next/server` (`NextResponse`, `NextRequest`).
+- Environment variables read: none.
+
+**Used by (imported by):** nothing imports it; two places redirect to it:
+- `src/features/auth/actions/delete-account.ts` (`signOut({ redirectTo: "/api/session/clear?reason=deletion-scheduled" })`)
+- `src/features/auth/stale-session-guard.tsx` (`?reason=expired`)
+
+**Security notes:**
+- **Allowlisted destinations:** `deletion-scheduled` → `/login?status=deletion-scheduled`, `expired` → `/login`, anything else → `/login`. The `reason` value is never used as a URL, so this can't become an open redirect.
+- `Clear-Site-Data: "cookies"` removes every cookie for the site in modern browsers. As a fallback, it also expires every cookie whose name contains `authjs.session-token` (which covers the `__Secure-` name on HTTPS, and chunked `.0`/`.1` cookies), setting `secure` to match the prefix so the browser accepts the deletion.
+
+**Notes:**
+- `Clear-Site-Data` also removes `ss_consent`, so after deleting an account the cookie banner appears again. That's expected.
+- Browsers only honour `Clear-Site-Data` on secure origins (HTTPS, or `localhost` in development). That's why the by-name fallback matters.
+- Because it's a plain `GET`, any site could link someone to it and sign them out. The harm is small (they just sign in again), and a `GET` is needed because it's reached by redirect.
+- `src/proxy.ts`'s matcher skips `/api`, so the proxy doesn't run for this route.
+
+### `src/app/api/cron/purge-deleted-accounts/route.ts`
+
+**What it does:** The job that actually deletes accounts once their grace period is over. A scheduler calls it with a secret; it finds up to 100 users whose `deletionScheduledFor` has passed, deletes each one (the database cascades to their data), sends each a final "your account has been deleted" email, and replies with counts only.
+
+**Runs on:** server only (a route handler, served at `/api/cron/purge-deleted-accounts`).
+
+**Exports:**
+- `GET(request)`: checks the secret, purges one batch, returns `{ deleted, failed, moreRemaining }`.
+
+**Depends on (imports):**
+- Internal: `@/lib/db` (find and delete users), `@/lib/email` (`sendAccountDeletedEmail`).
+- Packages: `node:crypto` (`timingSafeEqual`), `next/server`.
+- Environment variables read: `CRON_SECRET`.
+
+**Used by (imported by):** nothing imports it. It's meant to be called by a daily Vercel cron, which isn't configured yet (no `vercel.json`; it's on the Step 9 checklist).
+
+**Security notes:**
+- **Fails closed:** if `CRON_SECRET` isn't set, every request gets `401`.
+- The `Authorization: Bearer <secret>` header is compared with `timingSafeEqual`, so response timing doesn't leak how much of a guess was right. (The length check runs first; that only reveals the length, which is fixed at 64 hex characters anyway.)
+- **Race with reactivation:** the delete is `deleteMany` with the deadline check repeated in its `where`. If the user reactivated after the `findMany`, `count` is 0 and they're skipped.
+- The response contains counts only, never emails or ids, and logs contain error messages only.
+
+**Notes:**
+- Related data: `Account`, `AuthToken`, statements, transactions, categories and the subscription are deleted with the user (`onDelete: Cascade`). `ActivityEvent` and `AuditLog` rows are kept with the user reference set to `null` (`onDelete: SetNull`), so usage counts and the audit trail survive without pointing at a person.
+- One batch per call: if more than 100 accounts are due, `moreRemaining` is `true` and the rest wait for the next run.
+- The email goes out *after* the delete, using the address read beforehand. If the email fails, the deletion still stands.
+- A comment marks where Stripe subscriptions must be cancelled before Stripe goes live.
+- `.env.example` lists `CRON_SECRET` twice (lines 22 and 28). Harmless, but one can go.
+
 ### `next.config.ts` (auth-related parts)
 
-**What it does:** Next.js's configuration. Two parts matter for auth: `cacheComponents: true`, which is why every component that reads the request (`searchParams`, `cookies()`, `auth()`) must sit inside `<Suspense>`; and `headers()`, which sends `Referrer-Policy: no-referrer` on `/verify-email` and `/reset-password`.
+**What it does:** Next.js's configuration. Two parts matter for auth: `cacheComponents: true`, which is why every component that reads the request (`searchParams`, `cookies()`, `auth()`) must sit inside `<Suspense>`; and `headers()`, which sends `Referrer-Policy: no-referrer` on `/verify-email`, `/reset-password` and `/reactivate-account`.
 
 **Runs on:** build and server start-up (read once; changes need a server restart).
 
@@ -184,7 +253,7 @@ This guide is a map of every file that takes part in signing users up, signing t
 
 **Used by (imported by):** Next.js itself.
 
-**Security notes:** the verify and reset links carry a secret token in the URL (`?token=…`). `no-referrer` stops the browser from sending that full URL to any other site the page loads something from or links to.
+**Security notes:** the verify, reset and reactivation links carry a secret token in the URL (`?token=…`). `no-referrer` stops the browser from sending that full URL to any other site the page loads something from or links to.
 
 **Notes:** `partialPrefetching: true` is also on; it doesn't affect auth behaviour. `devIndicators: false` hides the "N" badge that `npm run dev` shows in the corner (compile and runtime errors still appear).
 
@@ -277,7 +346,7 @@ This guide is a map of every file that takes part in signing users up, signing t
 **Runs on:** server only (`import "server-only"`).
 
 **Exports:**
-- `LIMITS`: every limit in one place (sign-in 5 per email and 20 per IP per 15 min; register 5 per IP per hour; forgot password and resend verification 3 per email and 10 per IP per hour; reset password 10 per IP per hour; change password 5 per user per 15 min).
+- `LIMITS`: every limit in one place (sign-in 5 per email and 20 per IP per 15 min; register 5 per IP per hour; forgot password and resend verification 3 per email and 10 per IP per hour; reset password 10 per IP per hour; change password 5 per user per 15 min; delete account 5 per user per 15 min; resend reactivation link 3 per email and 10 per IP per hour).
 - `hashIdentifier(value)`: SHA-256 of an email or IP, so the table never stores them in plain text.
 - `rateLimit(key, { limit, windowSeconds })`: counts this attempt, returns `{ allowed, remaining, resetAt }`.
 - `deleteExpiredRateLimits()`: removes finished windows.
@@ -290,6 +359,7 @@ This guide is a map of every file that takes part in signing users up, signing t
 **Used by (imported by):**
 - `src/features/auth/credentials.ts` (sign-in, per email and per IP)
 - `src/features/auth/actions/register.ts`, `verify-email.ts` (resend), `password-reset.ts`, `change-password.ts`
+- `src/features/auth/actions/delete-account.ts` (per user), `reactivate-account.ts` (resend, per email and per IP)
 
 **Security notes:**
 - The upsert is a single atomic statement, so two requests at the same moment can't both slip under the limit.
@@ -298,21 +368,22 @@ This guide is a map of every file that takes part in signing users up, signing t
 
 **Notes:**
 - `deleteExpiredRateLimits()` isn't called anywhere yet (as the handoff says, it still needs scheduling), so expired rows stay in the table until then. They're harmless, because an expired row is reset on its next use.
-- The change-password key uses the raw user id (`changepw:user:<id>`) rather than a hash. User ids aren't personal data, so that's fine, but it differs slightly from the handoff's "keys hashed".
+- The change-password and delete-account keys use the raw user id (`changepw:user:<id>`, `deleteacct:user:<id>`) rather than a hash. User ids aren't personal data, so that's fine, but it differs slightly from the handoff's "keys hashed". The reactivation keys (`reactivate:email:…`, `reactivate:ip:…`) are hashed.
+- The delete-account limit mainly slows down password guessing: the delete dialog asks for the password, so without it someone at an unlocked laptop could try passwords there.
 - Every attempt counts, including successful ones. For example, five successful sign-ins in 15 minutes block the sixth.
 
 ### `src/lib/tokens.ts`
 
-**What it does:** Creates and redeems the one-time tokens inside email links (verify email: 24 hours; reset password: 1 hour). A token is 32 random bytes in URL-safe base64. Only its SHA-256 hash is stored in `auth_tokens`, and creating a new token deletes the user's older tokens of the same type. Redeeming looks the hash up, deletes the row, and only then checks expiry.
+**What it does:** Creates and redeems the one-time tokens inside email links (verify email: 24 hours; reset password: 1 hour; reactivate account: 48 hours, the deletion grace period). A token is 32 random bytes in URL-safe base64. Only its SHA-256 hash is stored in `auth_tokens`, and creating a new token deletes the user's older tokens of the same type. Redeeming looks the hash up, deletes the row, and only then checks expiry.
 
 **Runs on:** server only (`import "server-only"`).
 
 **Exports:**
-- `createAuthToken(userId, type)`: returns the plain token (to put in the email link).
+- `createAuthToken(userId, type, { expiresAt? })`: returns the plain token (to put in the email link). `expiresAt` overrides the normal lifetime; the resend-reactivation action uses it to make a new link expire at the **original** deletion time, not 48 hours from now.
 - `consumeAuthToken(token, type)`: returns the `userId` if the token was valid, otherwise `null`. Single use.
 
 **Depends on (imports):**
-- Internal: `@/lib/db`, `@/generated/prisma/client` (the `AuthTokenType` type).
+- Internal: `@/lib/db`, `@/lib/account-deletion` (`DELETION_GRACE_MS`, the reactivation lifetime), `@/generated/prisma/client` (the `AuthTokenType` type).
 - Packages: `server-only`, `node:crypto` (`randomBytes`, SHA-256).
 - Environment variables read: none.
 
@@ -320,6 +391,8 @@ This guide is a map of every file that takes part in signing users up, signing t
 - `src/features/auth/actions/register.ts` (creates verification tokens)
 - `src/features/auth/actions/verify-email.ts` (consumes verification tokens; creates new ones on resend)
 - `src/features/auth/actions/password-reset.ts` (creates and consumes reset tokens)
+- `src/features/auth/actions/delete-account.ts` (creates the first reactivation token)
+- `src/features/auth/actions/reactivate-account.ts` (consumes reactivation tokens; creates new ones on resend, capped at the deadline)
 
 **Security notes:**
 - Storing only the hash means a database leak doesn't give anyone working links.
@@ -327,11 +400,14 @@ This guide is a map of every file that takes part in signing users up, signing t
 - The type is checked, so a verification token can't be used as a reset token.
 - Old tokens of the same type are deleted when a new one is made, so only the newest email link works.
 
-**Notes:** an expired token is deleted when someone tries it (it's consumed first and then rejected), which is fine because it was useless anyway.
+**Notes:**
+- An expired token is deleted when someone tries it (it's consumed first and then rejected), which is fine because it was useless anyway.
+- Because a new token deletes older ones of the same type, asking for a new reactivation link makes the link in the first deletion email stop working. Only the newest email works.
+- There's an extra blank line after the imports (cosmetic only).
 
 ### `src/lib/email.ts`
 
-**What it does:** Sends the four auth emails through Resend: verify your email, reset your password, "you already have an account", and "your password was changed". Each has a plain-text and an HTML version. Links are built from `APP_URL`. The Resend client is created on first use, not when the file loads.
+**What it does:** Sends the six auth emails through Resend: verify your email, reset your password, "you already have an account", "your password was changed", "your account is scheduled for deletion" (with the reactivation link) and "your account has been deleted". Each has a plain-text and an HTML version. Links are built from `APP_URL`. The Resend client is created on first use, not when the file loads.
 
 **Runs on:** server only (`import "server-only"`).
 
@@ -340,6 +416,8 @@ This guide is a map of every file that takes part in signing users up, signing t
 - `sendPasswordResetEmail(to, token)`: link to `/reset-password?token=…` (1 hour).
 - `sendAccountExistsEmail(to)`: links to `/login` and `/forgot-password`.
 - `sendPasswordChangedEmail(to)`: notice with a link to `/forgot-password` in case it wasn't them.
+- `sendDeletionScheduledEmail(to, token, deletionDate)`: the deletion time in UK time (`Europe/London`) and a link to `/reactivate-account?token=…`. Also tells someone who didn't ask for this to reactivate and change their password.
+- `sendAccountDeletedEmail(to)`: the final "it's gone" notice, with a link to `/signup`.
 
 **Depends on (imports):**
 - Internal: none.
@@ -351,13 +429,19 @@ This guide is a map of every file that takes part in signing users up, signing t
 - `src/features/auth/actions/verify-email.ts` (verification resend)
 - `src/features/auth/actions/password-reset.ts` (reset link, changed notice)
 - `src/features/auth/actions/change-password.ts` (changed notice)
+- `src/features/auth/actions/delete-account.ts` (scheduled notice with the first reactivation link)
+- `src/features/auth/actions/reactivate-account.ts` (scheduled notice again, on resend)
+- `src/app/api/cron/purge-deleted-accounts/route.ts` (deleted notice)
 
 **Security notes:**
 - `sendAccountExistsEmail` is the anti-enumeration piece of sign-up: the form says the same thing whether or not the email is taken, and only the inbox owner learns an account exists.
 - Links are built from the server's `APP_URL`, never from the request's `Host` header, so an attacker can't make reset links point to their own domain.
 - Failures are logged by error name and message only, never with the token or link.
 
-**Notes:** with the Resend test sender, only the Resend account's own address actually receives mail. Sending to any other address makes `send()` throw. (For automated testing, Resend's `delivered@resend.dev` inbox, with a `+label`, works.)
+**Notes:**
+- With the Resend test sender, only the Resend account's own address actually receives mail. Sending to any other address makes `send()` throw. (For automated testing, Resend's `delivered@resend.dev` inbox, with a `+label`, works.)
+- There's no development mode: running locally sends real emails through Resend. Keep that in mind when testing sign-up and account deletion.
+- The deletion email is the account owner's safety net: if someone else deleted the account (for example on an unlocked laptop), the owner still has 48 hours to undo it from their inbox.
 
 ### `src/lib/request.ts`
 
@@ -402,6 +486,93 @@ This guide is a map of every file that takes part in signing users up, signing t
 **Security notes:** none (analytics only), but it always takes the `userId` from the session, never from the request.
 
 **Notes:** `lastActiveAt` holds the time of the *first* visit each day, not the latest. Two requests at the same moment can't both create an event, because only one `updateMany` gets `count === 1`.
+
+### `src/lib/account-deletion.ts`
+
+**What it does:** Holds one number: how long an account waits between "delete my account" and actually being deleted (48 hours). It's the single source for the grace period, so the scheduled deletion time, the reactivation link's lifetime and the "2 days" shown in the UI can't drift apart.
+
+**Runs on:** both. A plain constant with no imports, so client components can use it too.
+
+**Exports:**
+- `DELETION_GRACE_MS`: 48 hours in milliseconds.
+
+**Depends on (imports):**
+- Internal: none.
+- Packages: none.
+- Environment variables read: none.
+
+**Used by (imported by):**
+- `src/features/auth/actions/delete-account.ts` (sets `deletionScheduledFor = now + DELETION_GRACE_MS`)
+- `src/lib/tokens.ts` (the `ACCOUNT_REACTIVATION` token lifetime)
+- `src/features/auth/components/deletion-grace.ts` (turns it into "2 days" for the delete dialog and the login banner)
+
+**Security notes:** none directly. Keeping one source means a reactivation link can never outlive the deletion it's meant to cancel.
+
+**Notes:** The purge job is planned to run once a day (the Vercel cron is a Step 9 task and isn't set up yet), so an account will actually be removed 48–72 hours after the request. The UI says "after 2 days", which is the earliest it can happen.
+
+### `src/lib/session.ts`
+
+**What it does:** Wraps `auth()` in React's `cache()`, so a session is looked up **once per request** however many server components ask for it. Each `auth()` call runs the `jwt` callback, which queries the database; without the cache, a layout and a page that both need the session would each pay for that query.
+
+**Runs on:** server only (`import "server-only"`).
+
+**Exports:**
+- `getSession()`: the current session (or `null`), memoised for the rest of this request.
+
+**Depends on (imports):**
+- Internal: `@/auth` (`auth`).
+- Packages: `server-only`, `react` (`cache`).
+- Environment variables read: none.
+
+**Used by (imported by):**
+- `src/features/auth/queries.ts` (`getDeletionProof`)
+- `src/features/auth/stale-session-guard.tsx` (is there a session?)
+- `src/features/auth/activity-tracker.tsx` (who to record activity for)
+- `src/features/auth/components/profile-section.tsx` (name and email on Settings)
+
+**Security notes:** none of its own. It returns exactly what `auth()` returns, so the `sessionVersion` and deletion checks in the `jwt` callback still apply.
+
+**Notes:**
+- The rule is: **server components** use `getSession()`; **server actions** may keep calling `auth()`, because each action is its own request and the cache wouldn't help.
+- React's `cache()` only lasts for one server request; it never shares a session between users.
+- Not yet used everywhere: `sidebar-user.tsx`, `require-session.tsx` and `header-auth-actions.tsx` (built in B6) still call `auth()` directly, so an app page still does more than one session lookup. Switching them over is a small frontend change.
+
+### `src/lib/consent.ts`
+
+**What it does:** Everything about the cookie-consent choice, stored in a first-party cookie called `ss_consent`. It creates a choice (`{ version, analytics, decidedAt }`), turns it into cookie text and back, decides whether a saved choice is still valid, writes it to the browser and announces the change, and deletes Google Analytics cookies when someone withdraws. The banner, preferences dialog and analytics loader are all built on it.
+
+**Runs on:** both. Deliberately browser-safe: no `server-only`, no Zod, no Node APIs. The "Browser only" functions touch `document`/`window`, so only client components call them (`readConsentFromDocument` returns `null` on the server instead of crashing).
+
+**Exports:**
+- `CONSENT_COOKIE` (`"ss_consent"`), `CONSENT_VERSION` (`1`), `CONSENT_MAX_AGE_SECONDS` (182 days, about 6 months), `CONSENT_CHANGED_EVENT` (`"ss:consent-changed"`).
+- `ConsentCategory` (`"analytics"`) and `Consent` (the stored shape).
+- `createConsent({ analytics })`: a new choice stamped with the current version and time.
+- `serializeConsent` / `parseConsent`: to and from cookie text. `parseConsent` returns `null` for anything not JSON, the wrong shape, an old version, or older than 6 months.
+- `hasConsent(consent, "analytics")`: `true` only if that category was explicitly allowed.
+- `readConsentFromDocument()`: the valid saved choice, or `null` ("no decision").
+- `writeConsentToDocument(consent)`: saves the cookie (`Path=/`, `Max-Age`, `SameSite=Lax`, `Secure` on HTTPS) and fires `CONSENT_CHANGED_EVENT`.
+- `clearAnalyticsCookies()`: expires `_ga`, `_ga_*` and `_gid` on this host and each parent domain.
+
+**Depends on (imports):**
+- Internal: none.
+- Packages: none.
+- Environment variables read: none.
+
+**Used by (imported by):**
+- `src/features/privacy/components/cookie-consent.tsx` (show the banner when there's no decision; re-check on change)
+- `src/features/privacy/components/cookie-banner.tsx` (Accept all / Reject all)
+- `src/features/privacy/components/cookie-preferences-dialog.tsx` (save, and clear GA cookies on withdrawal)
+- `src/features/privacy/components/analytics-loader.tsx` (load analytics only with consent)
+
+**Security notes:**
+- Fails closed: any doubt (missing, garbled, tampered, old version, expired) means "no decision", so the banner shows and nothing optional loads.
+- Bumping `CONSENT_VERSION` re-asks everyone, which is what you do if the cookies used change.
+- The cookie isn't `HttpOnly` on purpose: the browser code has to read it. It holds no personal data.
+
+**Notes:**
+- The server never reads this cookie. That's what keeps the landing page static (reading cookies on the server would make every page dynamic).
+- `parseConsent` checks that a choice isn't *too old*, but not that `decidedAt` is in the past. A hand-edited future date would stay valid longer than 6 months. Only the visitor can edit their own cookie, so it isn't a security problem, just an edge case.
+- `clearAnalyticsCookies()` on its own wasn't enough during testing: gtag, still running, rewrote `_ga_<ID>` as the page unloaded. The preferences dialog now sets Google's `ga-disable-<ID>` flag first (see that entry).
 
 ---
 
@@ -465,12 +636,12 @@ The B6 test "`/login?callbackUrl=//evil.com` → sign in → lands on `/dashboar
 
 ### `src/features/auth/credentials.ts`
 
-**What it does:** The `authorize` function behind email-and-password sign-in. Auth.js calls it with the submitted email and password, and it decides whether they're valid. Its steps run in a deliberate order: validate input → rate-limit by email and IP → look up the user → do the same password-hashing work whether or not the user exists → only after a correct password, say "verify your email first" if needed → upgrade an outdated hash → return just the fields the session needs.
+**What it does:** The `authorize` function behind email-and-password sign-in. Auth.js calls it with the submitted email and password, and it decides whether they're valid. Its steps run in a deliberate order: validate input → rate-limit by email and IP → look up the user → do the same password-hashing work whether or not the user exists → only after a correct password, say "this account is scheduled for deletion" or "verify your email first" if needed → upgrade an outdated hash → return just the fields the session needs.
 
 **Runs on:** server only (`import "server-only"`).
 
 **Exports:**
-- `authorizeCredentials(credentials)`: returns a `User` (`id`, `name`, `email`, `image`, `role`, `sessionVersion`) or `null`, or throws `CredentialsSignin` subclasses with the codes `email_not_verified` or `rate_limited`.
+- `authorizeCredentials(credentials)`: returns a `User` (`id`, `name`, `email`, `image`, `role`, `sessionVersion`) or `null`, or throws `CredentialsSignin` subclasses with the codes `account_pending_deletion`, `email_not_verified` or `rate_limited`.
 
 **Depends on (imports):**
 - Internal: `@/lib/db`, `@/lib/rate-limit`, `@/lib/password`, `@/lib/password-rules`, `@/lib/request`, `./schemas` (`emailSchema`).
@@ -481,13 +652,17 @@ The B6 test "`/login?callbackUrl=//evil.com` → sign in → lands on `/dashboar
 - `src/auth.ts` (the Credentials provider's `authorize`). It runs when `signInWithPassword` calls `signIn("credentials", …)`.
 
 **Security notes:**
-- **Enumeration:** unknown emails and Google-only accounts (no `passwordHash`) still run a full Argon2 verification against a dummy hash, then return `null`, so the response and its timing match "wrong password". The "verify your email first" message is only revealed *after* a correct password, so it leaks nothing to someone guessing.
+- **Enumeration:** unknown emails and Google-only accounts (no `passwordHash`) still run a full Argon2 verification against a dummy hash, then return `null`, so the response and its timing match "wrong password". The "scheduled for deletion" and "verify your email first" messages are only revealed *after* a correct password, so they leak nothing to someone guessing.
+- **Deletion grace period:** a scheduled account can't sign in with its password, even the right one. The check comes before the email-verified check, so a scheduled account always gets the message that tells them how to undo it.
 - **Rate limits** run before any lookup or hashing, so brute force is cheap to refuse.
 - **Over-long passwords** (more than 128 characters) are rejected before hashing.
 - **Rehash on sign-in:** if the Argon2 settings are ever raised, users are upgraded quietly the next time they sign in. A failed rehash is logged and doesn't block the sign-in.
 - Returns only what the session needs; `passwordHash` never leaves this function.
 
-**Notes:** `null` becomes a plain `CredentialsSignin` in `sign-in.ts`, which shows "Email or password is incorrect.". The two custom codes map to their own messages there.
+**Notes:**
+- `null` becomes a plain `CredentialsSignin` in `sign-in.ts`, which shows "Email or password is incorrect.". The three custom codes map to their own messages there.
+- A scheduled account returns before step 7, so its hash isn't upgraded during the grace period. That's fine; it happens on the first sign-in after reactivation.
+- The `@/lib/password-rules` import ends with a stray `, }` (cosmetic only).
 
 ### `src/features/auth/activity-tracker.tsx`
 
@@ -499,26 +674,73 @@ The B6 test "`/login?callbackUrl=//evil.com` → sign in → lands on `/dashboar
 - `ActivityTracker`: the component.
 
 **Depends on (imports):**
-- Internal: `@/auth` (`auth`), `@/lib/activity` (`recordActivity`).
+- Internal: `@/lib/session` (`getSession`, the cached `auth()`), `@/lib/activity` (`recordActivity`).
 - Packages: `next/server` (`after`).
 - Environment variables read: none.
 
 **Used by (imported by):**
-- `src/app/(app)/layout.tsx`, inside `<Suspense fallback={null}>` (it reads the request, so it must be inside a boundary).
+- `src/app/(app)/layout.tsx`, inside `<Suspense fallback={null}>` together with `StaleSessionGuard` (both read the request, so they must be inside a boundary).
 
-**Security notes:** the user id comes from the validated session (`auth()` runs the `sessionVersion` check), not from anything the browser sends. Errors are caught and logged by message only.
+**Security notes:** the user id comes from the validated session (`getSession()` runs `auth()`, which does the `sessionVersion` and deletion checks), not from anything the browser sends. Errors are caught and logged by message only.
 
 **Notes:**
 - The session is read *before* `after()` because cookies and headers aren't available inside `after()` in a server component.
+- Since the privacy work it uses `getSession()` instead of calling `auth()` directly, so it shares one session lookup with `StaleSessionGuard` in the same request.
 - In B6, the two new components that call `auth()` (`header-auth-actions.tsx`, `sidebar-user.tsx`) needed `await connection()` first: in development, Next flagged Auth.js's use of `crypto` while prerendering. `ActivityTracker` didn't trigger that warning in testing, so it was left as it is. If the warning ever appears on app pages, the same one-line fix applies here.
+
+### `src/features/auth/queries.ts`
+
+**What it does:** Database reads for the auth feature's pages. Right now there's one: `getDeletionProof()`, which tells the Settings page what the signed-in user must type to confirm deleting their account. Users with a password must enter it; Google-only users (no `passwordHash`) must type their account email instead.
+
+**Runs on:** server only (`import "server-only"`).
+
+**Exports:**
+- `DeletionProof`: the type `"password" | "email"`.
+- `getDeletionProof()`: `"password"`, `"email"`, or `null` if nobody is signed in (or the user no longer exists).
+
+**Depends on (imports):**
+- Internal: `@/lib/db` (reads `passwordHash`), `@/lib/session` (`getSession`, so it shares the page's one session lookup).
+- Packages: `server-only`.
+- Environment variables read: none.
+
+**Used by (imported by):**
+- `src/app/(app)/settings/page.tsx` (calls `getDeletionProof()` inside `<Suspense>` and passes the result down)
+- `src/features/auth/components/danger-zone.tsx` and `delete-account-dialog.tsx` (`import type { DeletionProof }` only; type imports are removed when compiling, so no server code reaches the browser)
+
+**Security notes:** the result only decides **which field the dialog shows**. `requestAccountDeletion` looks up the user again and decides the proof itself, so changing the prop in the browser gains nothing. Only a boolean-like answer leaves the server, never the hash.
+
+**Notes:** it selects only `passwordHash` and immediately turns it into `"password"`/`"email"`, so the hash never travels further than this function.
+
+### `src/features/auth/stale-session-guard.tsx`
+
+**What it does:** Cleans up a "stale" session cookie. If the browser still sends an `authjs.session-token` cookie but the session is no longer valid (password changed elsewhere, account scheduled for deletion, cookie expired), it redirects to `/api/session/clear?reason=expired`, which deletes the cookie and lands on `/login`. Server components can read cookies but can't delete them, which is why it has to send the browser to a route handler. It renders nothing.
+
+**Runs on:** server only (an async server component).
+
+**Exports:**
+- `StaleSessionGuard`: the component.
+
+**Depends on (imports):**
+- Internal: `@/lib/session` (`getSession`).
+- Packages: `next/headers` (`cookies`), `next/navigation` (`redirect`).
+- Environment variables read: none.
+
+**Used by (imported by):**
+- `src/app/(app)/layout.tsx`, in the same `<Suspense fallback={null}>` as `ActivityTracker` (it reads the request).
+
+**Security notes:** without it, a dead cookie would keep being sent, and every request would pay for a `jwt` callback database lookup that always fails. The redirect target is a fixed path, never built from the request.
+
+**Notes:**
+- It only checks whether a cookie *exists* (by name), never its value.
+- `RequireSession` in the same layout also redirects signed-out visitors (to `/login`). When the session is invalid, both want to redirect, and whichever renders first decides. If `RequireSession` wins, the visitor reaches `/login` with the stale cookie still there until it expires. That's harmless (the proxy treats it as signed out), but worth checking with a stale cookie if it matters.
 
 ### Server actions (`src/features/auth/actions/`)
 
-All six files start with `"use server"`, so every exported async function is a **server action**: a function the browser can call by submitting a form, which runs only on the server. Treat each one as a public API endpoint, because anyone can call it with any input. That's why each one validates, rate-limits and (where relevant) checks `auth()` itself.
+All eight files start with `"use server"`, so every exported async function is a **server action**: a function the browser can call by submitting a form, which runs only on the server. Treat each one as a public API endpoint, because anyone can call it with any input. That's why each one validates, rate-limits and (where relevant) checks `auth()` itself.
 
 There are two styles:
-- **State-returning** (`register`, `signInWithPassword`, `changePassword`) return an object such as `{ status: "error", message, fieldErrors }` that a client component reads with `useActionState`.
-- **Redirecting** (`verifyEmail`, `resendVerification`, `requestPasswordReset`, `resetPassword`, `signInWithGoogle`, `signOutAction`) end with `redirect()` to a URL with `?status=` or `?error=`, and the page reads that. These work without JavaScript.
+- **State-returning** (`register`, `signInWithPassword`, `changePassword`, `requestAccountDeletion`) return an object such as `{ status: "error", message, fieldErrors }` that a client component reads with `useActionState`.
+- **Redirecting** (`verifyEmail`, `resendVerification`, `requestPasswordReset`, `resetPassword`, `signInWithGoogle`, `signOutAction`, `reactivateAccount`, `resendReactivation`) end with `redirect()` to a URL with `?status=` or `?error=`, and the page reads that. These work without JavaScript.
 
 #### `actions/register.ts`
 
@@ -549,6 +771,7 @@ There are two styles:
 **What it does:** Two actions. `signInWithPassword` calls `signIn("credentials", …)` with the email, password and a `redirectTo` from `safeCallbackUrl(formData.get("callbackUrl"))`. On failure it turns Auth.js errors into fixed messages:
 - `email_not_verified` → "Please verify your email first…"
 - `rate_limited` → "Too many attempts…"
+- `account_pending_deletion` → "This account is scheduled for deletion. Use the link in your email to reactivate it."
 - any other credentials failure → "Email or password is incorrect."
 - other Auth.js errors → "Something went wrong."
 
@@ -569,7 +792,10 @@ There are two styles:
 
 **Security notes:** non-Auth.js errors are re-thrown. That matters because a successful `signIn()` "fails" by throwing Next's redirect, and swallowing it would break sign-in. Messages come only from a fixed list.
 
-**Notes:** the final `return { status: "idle" }` is never reached in practice, because success always throws the redirect.
+**Notes:**
+- The final `return { status: "idle" }` is never reached in practice, because success always throws the redirect.
+- `login-form.tsx` shows a "Send a new link" link when the message is exactly the `account_pending_deletion` text. That's fragile (changing the wording here silently removes the link). Returning a `code` in `SignInState` alongside `message` would be sturdier.
+- The `account_pending_deletion` line has one extra leading space (cosmetic only).
 
 #### `actions/sign-out.ts`
 
@@ -652,6 +878,66 @@ There are two styles:
 
 **Security notes:** the user id comes from the session, never the form. Requiring the current password stops someone at an unlocked computer from taking over the account. Every device, including this one, is signed out (tested in B6: the old session was rejected afterwards).
 
+#### `actions/delete-account.ts`
+
+**What it does:** Schedules the signed-in user's account for deletion. Steps: `auth()` (must be signed in) → rate-limit per user → look up the user and decide the proof **from the database** → check the password (password accounts) or the typed email (Google-only accounts) → set `deletionScheduledFor = now + 48h` and increment `sessionVersion` in one update → create a reactivation token → send the "scheduled" email in `after()` → `signOut({ redirectTo: "/api/session/clear?reason=deletion-scheduled" })`, which clears cookies and lands on `/login?status=deletion-scheduled`.
+
+**Runs on:** server only (`"use server"`).
+
+**Exports:** `requestAccountDeletion(prevState, formData)`, type `DeleteAccountState` (`idle`, or `error` with `message` and optional `fieldErrors` for `password` / `confirmEmail`).
+
+**Depends on (imports):**
+- Internal: `@/auth` (`auth`, `signOut`), `@/lib/db`, `@/lib/account-deletion` (`DELETION_GRACE_MS`), `@/lib/email` (`sendDeletionScheduledEmail`), `@/lib/password` (`verifyPassword`), `@/lib/rate-limit`, `@/lib/tokens` (`createAuthToken`), `../schemas` (`emailSchema`, `existingPasswordSchema`).
+- Packages: `next/server` (`after`).
+- Environment variables read: none directly.
+
+**Used by (imported by):** `src/features/auth/components/delete-account-dialog.tsx` (with `useActionState`).
+
+**Form fields:** `password` (password accounts) or `confirmEmail` (Google-only accounts).
+
+**Security notes:**
+- The user id comes from the session, and the **database** decides which proof is needed. The `getDeletionProof()` prop only chooses which field the dialog shows, so tampering with it gains nothing.
+- The typed email is normalised the same way as stored emails (lowercase, NFKC) before comparing.
+- Incrementing `sessionVersion` and setting `deletionScheduledFor` signs out every device straight away; the `jwt` callback rejects both.
+- Not deleting immediately means a mistake, or someone else at an unlocked laptop, can be undone from the owner's inbox.
+- The rate limit runs before the password check, so the dialog can't be used to guess passwords quickly.
+
+**Notes:**
+- Scheduling and creating the token aren't in one transaction. If creating the token fails, the account is already scheduled (and signed out) but no email is sent; the user sees "Something went wrong" and can recover with "Send a new link" on `/reactivate-account`. Wrapping both in `db.$transaction` would close the gap.
+- An email failure inside `after()` is only logged; the same "Send a new link" route recovers from it.
+- The final `return { status: "idle" }` after `signOut()` is never reached, because `signOut` throws the redirect.
+
+#### `actions/reactivate-account.ts`
+
+**What it does:** Two redirecting actions for undoing a deletion during the grace period.
+- `reactivateAccount` (the **Keep my account** button): validate the `token` → consume it (single use) → clear `deletionScheduledFor`, but only if the deadline is still in the future → `/login?status=reactivated`. Any failure → `/reactivate-account?status=invalid`.
+- `resendReactivation` (the "Send a new link" form): validate the `email` (bad → `?status=invalid-email`) → rate-limit per email and per IP (over → `?status=limited`) → in `after()`, if that email belongs to an account still scheduled for deletion, create a new token that expires at the **original** deadline and email it → always `?status=sent`.
+
+**Runs on:** server only (`"use server"`).
+
+**Exports:** `reactivateAccount(formData)`, `resendReactivation(formData)`.
+
+**Depends on (imports):**
+- Internal: `@/lib/db`, `@/lib/email` (`sendDeletionScheduledEmail`), `@/lib/rate-limit` (`LIMITS`, `hashIdentifier`, `rateLimit`), `@/lib/request` (`getClientIp`), `@/lib/tokens` (`consumeAuthToken`, `createAuthToken`), `../schemas` (`emailSchema`, `tokenSchema`).
+- Packages: `next/server` (`after`), `next/navigation` (`redirect`).
+- Environment variables read: none directly.
+
+**Used by (imported by):** `src/app/(auth)/reactivate-account/page.tsx` (both, straight into `<form action>`).
+
+**Form fields:** hidden `token` (reactivate); `email` (resend).
+
+**Security notes:**
+- **Scanner-safe:** opening the email link only shows a page; nothing changes until the button is pressed, so email security scanners that "click" links can't reactivate (or use up) anything.
+- **Race with the purge job:** the update is `updateMany` with `deletionScheduledFor > now` inside its `where`. If the deadline has passed, `count` is 0 and the user sees "invalid", even if the purge hasn't run yet.
+- **Anti-enumeration:** `resendReactivation` always ends at `?status=sent`, and the lookup happens in `after()`, so neither the message nor the response time reveals whether the email has an account scheduled for deletion.
+- A resent link can't extend the grace period: its expiry is capped at the original deadline.
+- Only the emailed link reactivates. Signing in and resetting the password don't, so the deletion can only be undone by the inbox owner.
+
+**Notes:**
+- Reactivating doesn't sign the user in; they sign in again from `/login`. `sessionVersion` was incremented at deletion time, so any old cookies stay dead.
+- `reactivateAccount` has no rate limit. That's fine: tokens are 32 random bytes, far too many to guess.
+- A token is consumed even when the deadline has passed (the update then finds nothing). It wouldn't have worked anyway.
+
 ---
 
 ## UI
@@ -660,11 +946,11 @@ The UI files were built in B6 from the Figma file (`mgf2GJR0QdxCas9EqRDXaK`). Th
 
 ### Shared UI primitives (`src/components/ui/`)
 
-These are small building blocks with no auth knowledge, so any feature can use them. They're plain components (no `"use client"`), so they work in both server and client components.
+These are small building blocks with no auth knowledge, so any feature can use them. Most are plain components (no `"use client"`), so they work in both server and client components. `dialog.tsx` and `toggle.tsx` are client components because they handle clicks and keyboard input.
 
 #### `src/components/ui/button.tsx`
 
-**What it does:** One visual style for buttons and button-looking links. `buttonStyles()` builds the class list from a variant (`primary`, `secondary`, `outline`, `ghost`, `inverse`) and a size (`md` 44px, `lg` 48px), so a `<button>` and a `<Link>` can look identical.
+**What it does:** One visual style for buttons and button-looking links. `buttonStyles()` builds the class list from a variant (`primary`, `secondary`, `outline`, `ghost`, `inverse`, `destructive`, `destructive-outline`) and a size (`md` 44px, `lg` 48px), so a `<button>` and a `<Link>` can look identical.
 
 **Runs on:** both.
 
@@ -675,11 +961,11 @@ These are small building blocks with no auth knowledge, so any feature can use t
 
 **Depends on (imports):** packages `next/link`. Env: none.
 
-**Used by (imported by):** `src/features/auth/components/submit-button.tsx`, `header-auth-actions.tsx`, `signup-form.tsx`; `src/app/(auth)/reset-password/page.tsx`, `verify-email/page.tsx`; `src/features/marketing/components/hero.tsx`, `cta.tsx`, `pricing-plans.tsx`.
+**Used by (imported by):** `src/features/auth/components/submit-button.tsx`, `header-auth-actions.tsx`, `signup-form.tsx`, `delete-account-dialog.tsx`, `profile-section.tsx`; `src/app/(auth)/reset-password/page.tsx`, `verify-email/page.tsx`; `src/app/(app)/settings/_components/placeholder-sections.tsx`; `src/features/marketing/components/hero.tsx`, `cta.tsx`, `pricing-plans.tsx`; `src/features/privacy/components/cookie-banner.tsx`, `cookie-preferences-dialog.tsx`, `cookie-settings-button.tsx`.
 
 **Security notes:** none.
 
-**Notes:** `primary` matches Figma "Button/Primary"; `secondary` is "Button/Secondary" (green outline); `inverse` is a white button for green backgrounds that stays white in dark mode (brand-800 text, about 10:1); `outline` uses `foreground-subtle` for its border so the edge meets the 3:1 contrast rule for UI components (the Figma grey border didn't). Every variant has a visible `focus-visible` outline.
+**Notes:** `destructive` (filled, for the final "Delete my account") and `destructive-outline` (for buttons that only *open* a dangerous flow) were added in B7. Light mode uses white text on `destructive` (5.4:1); dark mode's `destructive` is too light for white, so the text switches to the page background colour with `dark:text-background` (7.2:1). `primary` matches Figma "Button/Primary"; `secondary` is "Button/Secondary" (green outline); `inverse` is a white button for green backgrounds that stays white in dark mode (brand-800 text, about 10:1); `outline` uses `foreground-subtle` for its border so the edge meets the 3:1 contrast rule for UI components (the Figma grey border didn't). Every variant has a visible `focus-visible` outline.
 
 #### `src/components/ui/input.tsx`
 
@@ -693,11 +979,11 @@ These are small building blocks with no auth knowledge, so any feature can use t
 
 **Depends on (imports):** none.
 
-**Used by (imported by):** `src/features/auth/components/login-form.tsx`, `signup-form.tsx`, `password-input.tsx` (`inputStyles`); `src/app/(auth)/forgot-password/page.tsx`, `verify-email/page.tsx`.
+**Used by (imported by):** `src/features/auth/components/login-form.tsx`, `signup-form.tsx`, `password-input.tsx` (`inputStyles`), `delete-account-dialog.tsx`, `profile-section.tsx`; `src/app/(auth)/forgot-password/page.tsx`, `verify-email/page.tsx`, `reactivate-account/page.tsx`; `src/app/(app)/settings/_components/placeholder-sections.tsx`.
 
 **Security notes:** none.
 
-**Notes:** the border is `foreground-subtle` rather than the lighter Figma grey, for 3:1 contrast. Inputs with `aria-invalid` get a red border automatically (`aria-invalid:` variant).
+**Notes:** the border is `foreground-subtle` rather than the lighter Figma grey, for 3:1 contrast. Inputs with `aria-invalid` get a red border automatically (`aria-invalid:` variant). Since B7, `disabled` inputs get the page background and muted text, used by the "Coming soon" Settings sections. (WCAG doesn't require contrast for disabled controls.)
 
 #### `src/components/ui/form-field.tsx`
 
@@ -742,11 +1028,67 @@ These are small building blocks with no auth knowledge, so any feature can use t
 
 **Depends on (imports):** none.
 
-**Used by (imported by):** `src/app/(app)/settings/password/page.tsx`.
+**Used by (imported by):** `src/app/(app)/settings/password/page.tsx`, `src/components/layout/page-placeholder.tsx`, `./settings-section.tsx`.
 
 **Security notes:** none.
 
-**Notes:** only one page uses it so far. It lives in `ui/` because the brief listed card as a shared primitive.
+**Notes:** it lives in `ui/` because the brief listed card as a shared primitive. Every Settings section is a `Card` (through `SettingsSection`).
+
+#### `src/components/ui/dialog.tsx`
+
+**What it does:** A modal dialog styled from the Figma "Edit Budget Modal": title, optional description and ✕ at the top, a divider, the content, then a buttons row. It's built on the browser's native `<dialog>` with `showModal()`, which already traps Tab inside the dialog, makes the page behind it inert, closes on Escape and draws the dimmed backdrop. The component adds the rest: it opens and closes with the `open` prop, moves focus to a chosen element when it opens, returns focus to whatever opened it when it closes, and closes on a backdrop click.
+
+**Runs on:** browser (`"use client"`).
+
+**Exports:**
+- `Dialog({ open, onClose, title, description?, children?, footer?, initialFocusRef? })`.
+
+**Depends on (imports):** packages `react`. Env: none.
+
+**Used by (imported by):** `src/features/auth/components/delete-account-dialog.tsx`, `src/features/privacy/components/cookie-preferences-dialog.tsx`.
+
+**Security notes:** none. (For destructive dialogs, pass `initialFocusRef` pointing at **Cancel** so Enter never confirms by accident.)
+
+**Notes:**
+- `onClose` is called for every way of closing (✕, Escape, backdrop, your own buttons), because the component listens for the native `close` event.
+- `aria-labelledby` and `aria-describedby` point at the title and description, so screen readers announce both when it opens.
+- Tailwind's reset removes the browser's default centring margin, so the dialog sets `m-auto` itself.
+- Parents give it a new `key` each time it opens, so fields and errors start fresh.
+
+#### `src/components/ui/toggle.tsx`
+
+**What it does:** The on/off switch from the Figma "Toggle" (40×22 with an 18px thumb). It's a `<button role="switch" aria-checked>`, so screen readers announce "switch, on" or "off", and Space or Enter flips it.
+
+**Runs on:** browser (`"use client"`).
+
+**Exports:**
+- `Toggle({ checked, onCheckedChange?, disabled?, ...buttonProps })`. Label it with `aria-labelledby` (or `aria-label`).
+
+**Depends on (imports):** packages `react` (types only). Env: none.
+
+**Used by (imported by):** `src/features/privacy/components/cookie-preferences-dialog.tsx` (Strictly necessary, always on; Analytics), `src/app/(app)/settings/_components/placeholder-sections.tsx` (Notifications, disabled).
+
+**Security notes:** none.
+
+**Notes:** the "off" track uses `foreground-subtle` so its edge meets the 3:1 contrast rule for UI components. It's a controlled component: it never changes itself, it just calls `onCheckedChange`.
+
+#### `src/components/ui/settings-section.tsx`
+
+**What it does:** The building blocks of the Settings page, from the Figma "Settings — /settings" frame. `SettingsSection` is one card: a heading (with an optional badge such as "Coming soon"), a divider, then content. `tone="danger"` gives the card a destructive-coloured border and heading, for the Danger zone. `SettingsRow` is the Figma Danger-zone row: a title and description on the left and an action (button, link or toggle) on the right, stacking underneath on small screens.
+
+**Runs on:** both.
+
+**Exports:**
+- `SettingsSection({ id, title, tone?, badge?, children })`: `id` goes on the `<h2>`, and the `<section>` is labelled by it.
+- `SettingsRow({ title, description?, action? })`: the title is an `<h3>`, so headings stay in order inside a section.
+
+**Depends on (imports):** internal `./card`. Env: none.
+
+**Used by (imported by):** `src/app/(app)/settings/page.tsx` (the Danger zone card), `src/features/auth/components/danger-zone.tsx`, `profile-section.tsx`, `src/features/privacy/components/privacy-settings-section.tsx`, `src/app/(app)/settings/_components/placeholder-sections.tsx`.
+
+**Security notes:** none.
+
+**Notes:** it's in `ui/` (not a feature) because sections from three features (auth, privacy and the placeholders) all use it, and features can't import each other.
 
 ### Shared layout (`src/components/layout/`)
 
@@ -814,7 +1156,8 @@ These are the page frames used by more than one area. They never import from `fe
 
 **Notes:**
 - Opening the drawer moves focus to its close button. Escape or the close button returns focus to the hamburger (tested). When closed on mobile, the drawer is `invisible`, so it can't be tabbed into.
-- "Settings" links to `/settings/password` for now, because there's no `/settings` page yet. It's highlighted on any `/settings/*` URL.
+- "Settings" links to `/settings` (since B7; it used to go to `/settings/password` because `/settings` didn't exist). It's highlighted on `/settings` and any `/settings/*` URL.
+- The signed-in area has no footer, so its "Cookie settings" button lives on the Settings page (Privacy section) rather than here.
 - Budgets is in the list because the mobile frame shows it (the desktop frame doesn't).
 - Icons are the text glyphs from the design, with `\uFE0E` added to ask for text rather than emoji style. On Windows the "↑" may still render blue, which is only cosmetic.
 - `/transactions`, `/recurring`, `/imports`, `/insights` and `/budgets` currently render `PagePlaceholder`. (They used to 404, which dropped the sidebar and so lost the current-page highlight.)
@@ -979,11 +1322,13 @@ UI used only by the auth feature. They import the server actions directly. Clien
 
 **Exports:** `LoginForm({ callbackUrl })`.
 
-**Depends on (imports):** `../actions/sign-in`, `@/components/ui/form-alert`, `form-field`, `input`, `./password-input`, `./submit-button`; packages `next/link`, `react`.
+**Depends on (imports):** `../actions/sign-in`, `@/components/ui/form-alert`, `form-field`, `input`, `./password-input`, `./send-new-link-link`, `./submit-button`; packages `next/link`, `react`.
 
 **Used by (imported by):** `src/app/(auth)/login/page.tsx`.
 
 **Security notes:** shows the server's message unchanged, so "Email or password is incorrect." covers both unknown email and wrong password. Values live only in memory (no `localStorage`).
+
+**Notes:** when the message is the "scheduled for deletion" text, a "Send a new link" link to `/reactivate-account` is added after it. It matches on the exact text (`PENDING_DELETION_MESSAGE`, marked `FRAGILE`), so if the wording in `sign-in.ts` changes, the link silently stops appearing. An error `code` from the action would be sturdier.
 
 #### `signup-form.tsx`
 
@@ -1013,7 +1358,7 @@ UI used only by the auth feature. They import the server actions directly. Clien
 
 **Depends on (imports):** `../actions/change-password`, `@/lib/password-rules`, `@/components/ui/form-alert`, `form-field`, `./password-input`, `./submit-button`; packages `react`.
 
-**Used by (imported by):** `src/app/(app)/settings/password/page.tsx`.
+**Used by (imported by):** `src/app/(app)/settings/password/page.tsx`, `./danger-zone.tsx` (the Change password row on `/settings`).
 
 **Security notes:** the Google-only account message comes from the server and is shown as-is.
 
@@ -1079,6 +1424,98 @@ UI used only by the auth feature. They import the server actions directly. Clien
 
 **Notes:** it redirects to plain `/login` (without a `callbackUrl`); the proxy's redirect, which normally runs first, adds one.
 
+#### `deletion-grace.ts`
+
+**What it does:** Turns `DELETION_GRACE_MS` into words for the UI: `DELETION_GRACE_DAYS` (`2`) and `DELETION_GRACE_TEXT` (`"2 days"`, or `"1 day"` if it were ever one day). The delete dialog, the Danger zone row and the login banner all use it, so none of them hard-codes "2 days".
+
+**Runs on:** both (constants only).
+
+**Exports:** `DELETION_GRACE_DAYS`, `DELETION_GRACE_TEXT`.
+
+**Depends on (imports):** `@/lib/account-deletion`. Env: none.
+
+**Used by (imported by):** `./delete-account-dialog.tsx`, `./danger-zone.tsx`, `src/app/(auth)/login/page.tsx`.
+
+**Security notes:** none.
+
+**Notes:** it rounds to whole days. If the grace period changed to something like 36 hours, the text would say "2 days", so check the wording then.
+
+#### `send-new-link-link.tsx`
+
+**What it does:** The "Send a new link" link to `/reactivate-account`, shown inside "scheduled for deletion" error messages. It's underlined and inherits the alert's text colour, so it reads as a link inside red or neutral alerts.
+
+**Runs on:** both.
+
+**Exports:** `SendNewLinkLink`.
+
+**Depends on (imports):** packages `next/link`. Env: none.
+
+**Used by (imported by):** `./login-form.tsx` (after the password sign-in message), `src/app/(auth)/login/page.tsx` (the `error=AccountPendingDeletion` banner, for Google sign-in).
+
+**Security notes:** none.
+
+#### `delete-account-dialog.tsx`
+
+**What it does:** The **Delete account** button and its confirm dialog. No Figma frame exists, so it's built from the Edit Budget Modal via the shared `Dialog`. It uses `useActionState(requestAccountDeletion)`. The dialog explains what happens ("permanently deleted after 2 days… signed out on all devices… we'll email you a link to reactivate"), then asks for one field depending on `proof`:
+- `"password"`: "Enter your password to confirm", a `PasswordInput` with `name="password"` and `autoComplete="current-password"`.
+- `"email"`: "Type your account email to confirm", an `Input` with `name="confirmEmail"`, `type="email"` and `autoComplete="off"`, never pre-filled.
+
+Buttons: **Cancel** (outline) and **Delete my account** (filled destructive, disabled with "Deleting…" while pending).
+
+**Runs on:** browser too (`"use client"`).
+
+**Exports:** `DeleteAccountButton({ proof })` (the button; it owns the dialog).
+
+**Depends on (imports):** `../actions/delete-account` (`requestAccountDeletion`, `DeleteAccountState`), `../queries` (**type only**: `DeletionProof`), `@/components/ui/button`, `dialog`, `form-alert`, `form-field`, `input`, `./deletion-grace`, `./password-input`; packages `react`.
+
+**Used by (imported by):** `./danger-zone.tsx`.
+
+**Security notes:**
+- **Focus starts on Cancel**, never on the destructive button, so pressing Enter straight away can't delete anything.
+- Server messages and field errors are shown unchanged. After a failed submit, focus moves to the field with the error (or to the alert).
+- There's no client-side redirect: on success the action signs out and redirects through `/api/session/clear`.
+
+**Notes:**
+- The submit button sits in the dialog's footer, outside the `<form>`, so it's linked with the `form="<id>"` attribute.
+- A new `key` each time the dialog opens resets `useActionState`, so an old error or typed password doesn't reappear.
+- `queries.ts` is `server-only`, but `import type` is removed when compiling, so importing the type here is safe.
+- The filename says "dialog", but the export is the button that opens it (the brief named the file).
+
+#### `danger-zone.tsx`
+
+**What it does:** The account rows of the Settings Danger zone: **Change password**, a divider, then **Delete account** (with a short explanation and the `DeleteAccountButton`). For `"password"` accounts, Change password is the full `ChangePasswordForm`. For Google-only (`"email"`) accounts it says the account signs in with Google and has no password yet, with a **Set a password** link to `/forgot-password`.
+
+**Runs on:** both (no hooks of its own; its children include client components).
+
+**Exports:** `AccountDangerZone({ proof })`.
+
+**Depends on (imports):** `@/components/ui/settings-section` (`SettingsRow`), `../queries` (type only), `./change-password-form`, `./delete-account-dialog`, `./deletion-grace`; packages `next/link`.
+
+**Used by (imported by):** `src/app/(app)/settings/page.tsx` (inside the Danger zone card, after "Delete all imported data").
+
+**Security notes:** none of its own. `proof` only changes what's shown; both actions check the database themselves.
+
+**Notes:** it returns rows, not a whole card, so the Settings page can put rows from other features (the imported-data placeholder) in the same Danger zone card without features importing each other.
+
+#### `profile-section.tsx`
+
+**What it does:** The Settings "Profile" card (Figma "Section-Profile"). It reads the session and shows the user's name and email in **disabled** fields with a disabled **Save** button and a "Coming soon" badge, because there's no action to save a profile yet. Also exports a skeleton for the `<Suspense>` fallback.
+
+**Runs on:** server (an async server component; the Settings page wraps it in `<Suspense>`).
+
+**Exports:** `ProfileSection`, `ProfileSectionSkeleton`.
+
+**Depends on (imports):** `@/lib/session` (`getSession`), `@/components/ui/button`, `form-field`, `input`, `settings-section`; packages `next/server` (`connection`).
+
+**Used by (imported by):** `src/app/(app)/settings/page.tsx`.
+
+**Security notes:** the name and email come from the validated session, never from the URL.
+
+**Notes:**
+- **Mock (marked `MOCK:` in the file):** saving needs an `updateProfile(prevState, formData)` action (field `name`). Changing the email needs its own verified-email flow.
+- Figma shows First name and Last name, but the `User` model has one `name`, so there's one field.
+- `await connection()` comes first, as in `sidebar-user.tsx`, because Auth.js uses `crypto` before reading the cookie.
+
 ### Auth pages (`src/app/(auth)/`)
 
 `(auth)` is a **route group**: the brackets organise files without adding to the URL, so `src/app/(auth)/login/page.tsx` is `/login`. Pages stay thin: they read the URL, pick a state and compose components from `features/auth/components`. Nothing imports a page; Next.js routes to it.
@@ -1103,12 +1540,15 @@ UI used only by the auth feature. They import the server actions directly. Clien
 
 **What it does:** The split card with "Welcome back" in the static shell. Inside `<Suspense>` it reads `callbackUrl`, `error` and `status`, then shows:
 - `status=password-changed` → a success banner.
+- `status=deletion-scheduled` → an info banner: "Your account is scheduled for deletion. We've emailed you a link to reactivate it within 2 days." (days from `DELETION_GRACE_TEXT`).
+- `status=reactivated` → a success banner: "Your account has been reactivated. Sign in to continue."
+- `error=AccountPendingDeletion` (from the Google `signIn` callback) → an error banner with a **Send a new link** link to `/reactivate-account`.
 - `error=OAuthAccountNotLinked` / `AccessDenied` / anything else → the matching fixed error banner.
 - Then `LoginForm` and the Google button, both given `callbackUrl` (only if it's a single string).
 
 **Runs on:** server. **Exports:** default page, `metadata` (title).
 
-**Depends on (imports):** `@/components/ui/form-alert`, `@/features/auth/components/auth-split-card`, `form-skeleton`, `google-button`, `login-form`; packages `next/link`, `react`.
+**Depends on (imports):** `@/components/ui/form-alert`, `@/features/auth/components/auth-split-card`, `deletion-grace`, `form-skeleton`, `google-button`, `login-form`, `send-new-link-link`; packages `next/link`, `react`.
 
 **Security notes:** `callbackUrl` is passed on unchanged; only the server actions decide whether it's safe. Signed-in visitors never see this page (the proxy sends them to `/dashboard`; tested).
 
@@ -1178,19 +1618,75 @@ UI used only by the auth feature. They import the server actions directly. Clien
 
 **Notes:** B6 replaced the temporary `signIn()` form with a `<Link href="/login">`.
 
+#### `src/app/(auth)/reactivate-account/page.tsx` → `/reactivate-account`
+
+**What it does:** The page behind the link in the "scheduled for deletion" email. Elizabette built the minimal version; B7 restyled it with the centred card to match `/verify-email` and kept the behaviour exactly. Inside `<Suspense>` it reads `token` and `status`:
+- Token present, no status: "Reactivate your account" / "Your account is scheduled for deletion. Confirm below to keep it." plus **Keep my account** (posts the hidden `token` to `reactivateAccount`).
+- `sent`: "If that email belongs to an account scheduled for deletion, we've sent a new reactivation link. It works until the scheduled deletion time."
+- `limited`: "Too many requests".
+- Anything else (`invalid`, `invalid-email`, no token): "This link is invalid or has expired" plus a form to send a new link (`resendReactivation`, field `email`); `invalid-email` adds "Enter a valid email address." under the field.
+
+**Runs on:** server. **Exports:** default page, `metadata`.
+
+**Depends on (imports):** `@/features/auth/actions/reactivate-account`, `@/components/ui/form-field`, `input`, `@/features/auth/components/auth-centered-card`, `back-to-login`, `form-skeleton`, `submit-button`; packages `react`.
+
+**Security notes:** opening the link changes nothing; only the button does (tested with a fake token: nothing changed until pressed, then it showed the invalid state). Gets `Referrer-Policy: no-referrer` from `next.config.ts`. The "sent" wording doesn't reveal whether the email has an account.
+
+**Notes:** no Figma frame; it follows the "Forgot password" centred card like the other one-step screens. The proxy doesn't protect it, so signed-out visitors (which everyone in the grace period is) can open it.
+
 ### App area (`src/app/(app)/`)
 
 #### `src/app/(app)/layout.tsx`
 
-**What it does:** The layout for every signed-in page. It renders `RequireSession` (the backup sign-in check), then `AppShell` with its slots filled by `SidebarUser` and `SignOutButton`, and keeps the pre-existing `<Suspense fallback={null}><ActivityTracker /></Suspense>` block unchanged after it.
+**What it does:** The layout for every signed-in page. It renders `RequireSession` (the backup sign-in check), then `AppShell` with its slots filled by `SidebarUser` and `SignOutButton`, and then a `<Suspense fallback={null}>` block holding `StaleSessionGuard` and `ActivityTracker`. That block must stay exactly as it is.
 
 **Runs on:** server. **Exports:** default `AppLayout`.
 
-**Depends on (imports):** `@/components/layout/app-shell`, `@/features/auth/activity-tracker`, `@/features/auth/components/require-session`, `sidebar-user`, `sign-out-button`; packages `react`.
+**Depends on (imports):** `@/components/layout/app-shell`, `@/features/auth/activity-tracker`, `@/features/auth/stale-session-guard`, `@/features/auth/components/require-session`, `sidebar-user`, `sign-out-button`; packages `react`.
 
-**Used by:** Next.js, for `/dashboard`, `/settings/password` and future app pages.
+**Used by:** Next.js, for `/dashboard`, `/settings`, `/settings/password` and the other app pages.
 
-**Security notes:** the proxy redirects signed-out visitors first. `RequireSession` redirects to `/login` if a request ever gets this far without a valid session. Pages and actions that touch user data must still call `auth()` themselves.
+**Security notes:** the proxy redirects signed-out visitors first. `RequireSession` redirects to `/login` if a request ever gets this far without a valid session. `StaleSessionGuard` clears a leftover session cookie that's no longer valid. Pages and actions that touch user data must still check the session themselves (`getSession()` in server components, `auth()` in actions).
+
+**Notes:** `StaleSessionGuard` and `ActivityTracker` share one `<Suspense>` and one cached session lookup (`getSession()`). See the guard's entry for how it interacts with `RequireSession`.
+
+#### `src/app/(app)/settings/page.tsx` → `/settings`
+
+**What it does:** The Settings page, from the Figma "Settings — /settings" frame, with one deliberate change: the **Danger zone is last**, because it changes important things. Order: page header ("Settings" / "Manage your account, preferences, and data") → **Profile** → **Financial preferences** → **Notifications** → **Privacy** (Cookie settings) → **Danger zone**. The Danger zone card holds "Delete all imported data", then (inside `<Suspense>`) the account rows: Change password and Delete account. The account rows need `getDeletionProof()`, which reads the session, so that part streams in.
+
+**Runs on:** server. **Exports:** default page, `metadata` (title).
+
+**Depends on (imports):** `@/components/ui/settings-section`, `@/features/auth/components/danger-zone`, `form-skeleton`, `profile-section`, `@/features/auth/queries` (`getDeletionProof`), `@/features/privacy/components/privacy-settings-section`, `./_components/placeholder-sections`; packages `next/server` (`connection`), `react`.
+
+**Used by:** Next.js (the sidebar's Settings link).
+
+**Security notes:** behind the proxy (`/settings` is protected) and `RequireSession`. If `getDeletionProof()` returns `null` (not signed in), the account rows render nothing rather than guessing.
+
+**Notes:**
+- The page shell (header and the session-free sections) prerenders. Profile and the account rows wait behind their own `<Suspense>` boundaries, so the build shows the page as partially prerendered (◐).
+- Pages in `app/` may import from several features; it's only features that can't import each other. That's why this page composes auth, privacy and the placeholders.
+- Profile, Financial preferences, Notifications and "Delete all imported data" are disabled placeholders ("Coming soon"); see `_components/placeholder-sections.tsx` and `profile-section.tsx`.
+
+#### `src/app/(app)/settings/_components/placeholder-sections.tsx`
+
+**What it does:** The Settings sections from Figma whose backend doesn't exist yet, shown **disabled** with a "Coming soon" badge so the page matches the design without pretending to work:
+- `FinancialPreferencesSection`: monthly income, primary financial goal, currency (GBP £), and Save.
+- `NotificationsSection`: three toggles (statement upload reminder, spending spike alerts, monthly summary), all off.
+- `DeleteImportedDataRow`: "Delete all imported data" with a disabled **Delete data** button (placed in the Danger zone).
+
+**Runs on:** server (plain components; the `Toggle` inside is a client component).
+
+**Exports:** `FinancialPreferencesSection`, `NotificationsSection`, `DeleteImportedDataRow`.
+
+**Depends on (imports):** `@/components/ui/button`, `form-field`, `input`, `settings-section`, `toggle`.
+
+**Used by (imported by):** `src/app/(app)/settings/page.tsx`.
+
+**Security notes:** none (nothing can be submitted).
+
+**Notes:**
+- The leading `_` makes `_components` a **private folder**: Next.js never turns it into a route. These sections live here only because their real features don't exist yet. Move each one into its feature's `components/` folder when its backend is built.
+- Backend each one needs (also in `MOCK:` comments in the file): `getFinancialPreferences()` + `updateFinancialPreferences` (`monthlyIncome`, `primaryGoal`, `currency`); saved notification settings + an update action; `deleteImportedData()` in `features/imports/actions.ts` (with a confirm dialog like Delete account).
 
 #### `src/app/(app)/settings/password/page.tsx` → `/settings/password`
 
@@ -1202,7 +1698,9 @@ UI used only by the auth feature. They import the server actions directly. Clien
 
 **Security notes:** the page reads no user data, so it doesn't call `auth()`. The `changePassword` action does. `/settings` is in the proxy's protected list, so signed-out visitors are redirected to log in first.
 
-**Notes:** `src/app/(app)/dashboard/page.tsx` is still the placeholder heading, unchanged in B6.
+**Notes:**
+- `src/app/(app)/dashboard/page.tsx` is still the placeholder heading, unchanged in B6.
+- Since B7, the same form also appears in the `/settings` Danger zone, and the sidebar links to `/settings`. This page still works but nothing links to it; it could become a redirect to `/settings` (Elizabette's decision).
 
 ### Landing page (`src/app/(marketing)/` and `src/features/marketing/`)
 
@@ -1212,15 +1710,17 @@ The landing page has no auth logic of its own, but it's the front door to sign-u
 
 #### `src/app/(marketing)/layout.tsx`
 
-**What it does:** `SiteHeader` (with `HeaderAuthActions`), then `<main>`, then `SiteFooter`.
+**What it does:** `SiteHeader` (with `HeaderAuthActions`), then `<main>`, then `SiteFooter` with the privacy feature's `CookieSettingsButton` passed into its `cookieSettings` slot.
 
 **Runs on:** server. **Exports:** default `MarketingLayout`.
 
-**Depends on (imports):** `@/components/layout/site-header`, `@/features/auth/components/header-auth-actions`, `@/features/marketing/components/site-footer`.
+**Depends on (imports):** `@/components/layout/site-header`, `@/features/auth/components/header-auth-actions`, `@/features/marketing/components/site-footer`, `@/features/privacy/components/cookie-settings-button`.
 
-**Used by:** Next.js, for `/`.
+**Used by:** Next.js, for `/` and `/cookies`.
 
 **Security notes:** none.
+
+**Notes:** the slot is how a feature's component ends up inside another feature's component: the footer (marketing) never imports the privacy feature; the layout in `app/` puts the two together.
 
 #### `src/app/(marketing)/page.tsx` → `/`
 
@@ -1346,17 +1846,19 @@ The landing page has no auth logic of its own, but it's the front door to sign-u
 
 #### `src/features/marketing/components/site-footer.tsx`
 
-**What it does:** Logo, footer links (Privacy Policy, Terms, Contact) and the regulatory note: "SpendSense provides general information and budgeting insights, not regulated financial advice. For free, impartial guidance, visit MoneyHelper", linking to `https://www.moneyhelper.org.uk` in a new tab (with `rel="noopener noreferrer"` and a screen-reader note that it opens a new tab).
+**What it does:** Logo, footer links (Privacy Policy, Terms, Contact, Cookie policy, and the optional `cookieSettings` slot) and the regulatory note: "SpendSense provides general information and budgeting insights, not regulated financial advice. For free, impartial guidance, visit MoneyHelper", linking to `https://www.moneyhelper.org.uk` in a new tab (with `rel="noopener noreferrer"` and a screen-reader note that it opens a new tab).
 
-**Runs on:** server. **Exports:** `SiteFooter`.
+**Runs on:** server. **Exports:** `SiteFooter({ cookieSettings? })`.
 
-**Depends on (imports):** `@/components/layout/logo`; packages `next/link`.
+**Depends on (imports):** `@/components/layout/logo`; packages `next/link`, `react` (the `ReactNode` type).
 
-**Used by (imported by):** `src/app/(marketing)/layout.tsx`.
+**Used by (imported by):** `src/app/(marketing)/layout.tsx` (passes `<CookieSettingsButton />` as `cookieSettings`).
 
 **Security notes:** `noopener` stops the opened site from controlling this tab.
 
-**Notes:** Privacy, Terms and Contact link to `#` because those pages don't exist yet.
+**Notes:**
+- Privacy, Terms and Contact link to `#` because those pages don't exist yet. "Cookie policy" goes to `/cookies`.
+- The links wrap onto two lines on narrow screens (`flex-wrap`), since five don't fit at 320px.
 
 ### Images (`public/images/auth/`)
 
@@ -1365,6 +1867,195 @@ The landing page has no auth logic of its own, but it's the front door to sign-u
 **Used by:** `src/features/auth/components/auth-centered-card.tsx` (the three icons), `signup-form.tsx` (`email-open.svg` on the success view), `google-button.tsx` (`google-g.svg`).
 
 **Security notes:** none. They're static files served as-is, and all are decorative (`alt=""`).
+
+### Cookie consent and analytics (`src/features/privacy/`)
+
+Built in B7 on top of `src/lib/consent.ts`. Nothing here has a Figma frame; it's built from the existing card, modal and toggle styles. Three rules shape every file:
+- **The server never reads the consent cookie.** The banner and the loader are client components that read it after the page loads, so the landing page and `/cookies` stay prerendered.
+- **No hydration mismatch.** On the server and on the first render in the browser they render nothing; they decide in `useEffect`, after mount.
+- **Nothing optional loads before a choice**, and Reject all is exactly as easy and prominent as Accept all.
+
+#### `src/features/privacy/events.ts`
+
+**What it does:** The shared "open the cookie settings dialog" signal. `openCookieSettings()` fires a browser event called `ss:open-cookie-settings`; the one `CookieConsent` in the root layout listens for it and opens the dialog. Any "Cookie settings" button anywhere just calls this function.
+
+**Runs on:** browser (it uses `window`; only called from click handlers).
+
+**Exports:** `OPEN_COOKIE_SETTINGS_EVENT` (`"ss:open-cookie-settings"`), `openCookieSettings()`.
+
+**Depends on (imports):** none. Env: none.
+
+**Used by (imported by):** `./components/cookie-consent.tsx` (listens; also the banner's Manage preferences), `./components/cookie-settings-button.tsx` (fires).
+
+**Security notes:** none. Any script on the page could fire the event, but all it does is open the dialog.
+
+**Notes:** why an event and not React context: the buttons sit inside server-rendered footers and pages. A context would need a client provider around the whole app; an event needs nothing.
+
+#### `src/features/privacy/components/cookie-settings-button.tsx`
+
+**What it does:** The "Cookie settings" control. It's a `<button>`, not a link, because it opens something instead of going somewhere. `look="link"` (the default) styles it like the footer links; `look="button"` makes it an outline button for pages.
+
+**Runs on:** browser too (`"use client"`; it has a click handler).
+
+**Exports:** `CookieSettingsButton({ look? })`.
+
+**Depends on (imports):** `@/components/ui/button`, `../events` (`openCookieSettings`).
+
+**Used by (imported by):** `src/app/(marketing)/layout.tsx` (footer slot), `./cookie-policy.tsx` ("How to change your choice"), `./privacy-settings-section.tsx` (Settings).
+
+**Security notes:** none.
+
+**Notes:** it only works once the page has loaded its JavaScript (it needs `CookieConsent` listening). Before that, a click does nothing. That's fine, since the dialog needs JavaScript anyway.
+
+#### `src/features/privacy/components/cookie-preferences-dialog.tsx`
+
+**What it does:** The "Cookie settings" dialog (built on the shared `Dialog`). Two rows:
+- **Strictly necessary**: what they do, plus a toggle that's on and disabled, labelled "Always on".
+- **Analytics**: names Google Analytics, Vercel Web Analytics and Plausible and what they're for; its toggle starts from the saved choice, or **off** if there isn't one.
+
+Buttons: **Save preferences** (saves the toggle), **Reject all** and **Accept all** (same style and size, side by side).
+
+**Runs on:** browser too (`"use client"`).
+
+**Exports:** `CookiePreferencesDialog({ open, onClose, initialAnalytics })`.
+
+**Depends on (imports):** `@/lib/consent` (`createConsent`, `readConsentFromDocument`, `writeConsentToDocument`, `clearAnalyticsCookies`), `@/components/ui/button`, `dialog`, `toggle`; packages `react`.
+- Environment variables read: `NEXT_PUBLIC_GA_MEASUREMENT_ID` (for the opt-out flag below).
+
+**Used by (imported by):** `./cookie-consent.tsx`.
+
+**Security notes (withdrawal):** if analytics was allowed and is now refused, it:
+1. sets `window['ga-disable-<ID>'] = true` (Google's official opt-out flag), so gtag stops sending data and writing cookies;
+2. calls `clearAnalyticsCookies()`;
+3. reloads the page, because scripts that already ran can't be unloaded.
+
+**Notes:**
+- Step 1 was added after testing: without it, gtag rewrote `_ga_<ID>` while the page was unloading, after it had been deleted. With it, both `_ga` cookies are gone after withdrawing (tested).
+- Each save goes through `writeConsentToDocument`, which fires `CONSENT_CHANGED_EVENT`, so the banner hides and the loader reacts without any direct link between them.
+
+#### `src/features/privacy/components/cookie-banner.tsx`
+
+**What it does:** The banner pinned to the bottom of the screen when there's no valid choice: a short explanation, a "Cookie policy" link to `/cookies`, and three buttons: **Manage preferences** (opens the dialog), **Reject all** and **Accept all**. Reject and Accept save straight away with `writeConsentToDocument(createConsent({ analytics: false | true }))`.
+
+**Runs on:** browser too (`"use client"`).
+
+**Exports:** `CookieBanner({ onManage })`.
+
+**Depends on (imports):** `@/lib/consent` (`createConsent`, `writeConsentToDocument`), `@/components/ui/button`; packages `next/link`, `react`.
+
+**Used by (imported by):** `./cookie-consent.tsx` (which decides when to show it).
+
+**Security notes:** none. Privacy notes: nothing is pre-selected, Reject all and Accept all are the same variant and size side by side, and there's no guilt wording.
+
+**Notes:**
+- `role="region"` with `aria-label="Cookie consent"`. It never grabs focus; it comes early in the tab order instead (it's rendered before the page content), and the page stays usable behind it.
+- While it shows, it adds bottom padding to `<body>` equal to its own height (measured with a `ResizeObserver`), and removes it when it closes. Without that, it covered the footer even when scrolled to the very end, which also fails WCAG 2.2 "Focus Not Obscured".
+
+#### `src/features/privacy/components/cookie-consent.tsx`
+
+**What it does:** The one component that owns the banner and the preferences dialog for the whole site. After mount it reads `ss_consent`; if there's no valid choice it shows the banner. It listens for `CONSENT_CHANGED_EVENT` (to hide the banner once a choice is saved) and for `ss:open-cookie-settings` (to open the dialog, pre-set from the current saved choice).
+
+**Runs on:** browser too (`"use client"`).
+
+**Exports:** `CookieConsent`.
+
+**Depends on (imports):** `@/lib/consent` (`CONSENT_CHANGED_EVENT`, `readConsentFromDocument`), `../events`, `./cookie-banner`, `./cookie-preferences-dialog`; packages `react`.
+
+**Used by (imported by):** `src/app/layout.tsx` (once, at the top of `<body>`).
+
+**Security notes:** none of its own. "No decision" (including tampered or expired cookies) always means "show the banner", never "assume yes" (tested by editing `ss_consent` by hand).
+
+**Notes:**
+- It renders nothing on the server and on the first browser render, so the HTML always matches and the landing page stays static.
+- The dialog only mounts after it's first opened, and gets a new `key` each time, so it always starts from the current saved choice.
+
+#### `src/features/privacy/components/analytics-loader.tsx`
+
+**What it does:** Loads the analytics tools, but only after the visitor has allowed analytics. Until `hasConsent(consent, "analytics")` is `true` it renders nothing. It re-checks whenever `CONSENT_CHANGED_EVENT` fires, so **Accept all** starts analytics straight away, without a reload. When allowed, each tool loads only if its env variable is set:
+- **Vercel Web Analytics:** `<Analytics />` from `@vercel/analytics/next`, if `NEXT_PUBLIC_VERCEL_ANALYTICS === "true"`.
+- **Google Analytics 4:** `<GoogleAnalytics gaId />` from `@next/third-parties/google`, if `NEXT_PUBLIC_GA_MEASUREMENT_ID` is set.
+- **Plausible:** `next/script` loading `https://plausible.io/js/script.js` with `data-domain`, if `NEXT_PUBLIC_PLAUSIBLE_DOMAIN` is set.
+
+**Runs on:** browser too (`"use client"`).
+
+**Exports:** `AnalyticsLoader`.
+
+**Depends on (imports):** `@/lib/consent` (`CONSENT_CHANGED_EVENT`, `hasConsent`, `readConsentFromDocument`).
+- Packages: `@vercel/analytics` (2.0.1), `@next/third-parties` (16.4.6), `next/script`, `react`. The import paths and props match the installed versions' type definitions and the Next 16 bundled guide.
+- Environment variables read: `NEXT_PUBLIC_VERCEL_ANALYTICS`, `NEXT_PUBLIC_GA_MEASUREMENT_ID`, `NEXT_PUBLIC_PLAUSIBLE_DOMAIN`.
+
+**Used by (imported by):** `src/app/layout.tsx` (once, at the end of `<body>`).
+
+**Security notes:** no user ids, names, emails or custom events are ever sent; only the tools' default page views.
+
+**Notes:**
+- `NEXT_PUBLIC_` values are **baked into the browser code at build time**. Changing them in Vercel needs a redeploy.
+- Removing the component doesn't stop scripts that already ran. That's why withdrawal reloads the page (see the preferences dialog).
+- Vercel Web Analytics doesn't send data in development; it can only be checked on a Vercel deployment.
+- Tested with fake IDs: nothing loads before a choice or after Reject all; all three load without a reload after Accept all.
+
+#### `src/app/layout.tsx` (root layout)
+
+**What it does:** The outermost layout for every page. It loads the Inter font (`--font-inter`), sets the default `metadata`, runs the theme script in `<head>` before the first paint, and renders `<body>`. Since B7, `<body>` contains `<CookieConsent />` first, then the page (`children`), then `<AnalyticsLoader />`.
+
+**Runs on:** server. **Exports:** default `RootLayout`, `metadata`.
+
+**Depends on (imports):** `./globals.css`, `@/components/layout/theme-script` (`THEME_SCRIPT`), `@/features/privacy/components/cookie-consent`, `analytics-loader`; packages `next/font/google`.
+
+**Used by:** Next.js, for every route.
+
+**Security notes:** it never calls `cookies()`, `headers()` or `auth()`. If it did, every page in the app would become dynamic and the landing page couldn't be prerendered.
+
+**Notes:**
+- `CookieConsent` comes before the page content so the banner is early in the keyboard tab order.
+- B7 changed only the inside of `<body>`; fonts, metadata and classes are as they were.
+
+#### `src/features/privacy/components/cookie-policy.tsx`
+
+**What it does:** The content of the cookie policy, in plain English: what cookies are; strictly necessary cookies; analytics (optional), including "Vercel Web Analytics and Plausible don't use cookies. We only load them if you allow analytics."; a table of every cookie; how to change your choice (with a **Cookie settings** button); how long choices last (6 months); and contact.
+
+**Runs on:** server (the `CookieSettingsButton` inside is a client component).
+
+**Exports:** `CookiePolicy`.
+
+**Depends on (imports):** `./cookie-settings-button`; packages `react` (types).
+
+**Used by (imported by):** `src/app/(marketing)/cookies/page.tsx`.
+
+**Security notes:** none. Copy rule: it never describes SpendSense as financial advice.
+
+**Notes:**
+- The cookie table (`COOKIES`) was checked against the code: session up to 7 days (`auth.config.ts`), CSRF and callback cookies for the browser session, Google sign-in state and PKCE cookies 15 minutes (Auth.js defaults), `ss_consent` about 6 months (`consent.ts`), and `_ga` / `_ga_<ID>` **2 years** (Google's GA4 documentation, checked 11 Nov 2026). `ss_consent` and the `_ga` cookies were also seen in the browser; the auth cookies weren't checked in DevTools yet (that needs a signed-in test account).
+- The table scrolls sideways inside its own box on small screens (keyboard-focusable, labelled), so the page itself never scrolls sideways.
+- "Contact page" links to `#` until a contact page exists (same as the footer).
+
+#### `src/app/(marketing)/cookies/page.tsx` → `/cookies`
+
+**What it does:** A thin route file: page `metadata` (title and description) and `<CookiePolicy />`. It sits in the `(marketing)` group, so it gets the landing page's header and footer.
+
+**Runs on:** server. **Exports:** default page, `metadata`.
+
+**Depends on (imports):** `@/features/privacy/components/cookie-policy`.
+
+**Used by:** Next.js. Linked from the cookie banner, the footer, and the Settings Privacy section.
+
+**Security notes:** none. It reads no request data, so its content prerenders. (The build shows ◐ only because the shared header streams the signed-in state.)
+
+#### `src/features/privacy/components/privacy-settings-section.tsx`
+
+**What it does:** The Settings "Privacy" card: a "Cookies" row ("Choose whether we can use analytics." plus a "Cookie policy" link) with a **Cookie settings** button. No Figma frame; it uses the same row style as the Danger zone.
+
+**Runs on:** server (the button inside is a client component).
+
+**Exports:** `PrivacySettingsSection`.
+
+**Depends on (imports):** `@/components/ui/settings-section`, `./cookie-settings-button`; packages `next/link`.
+
+**Used by (imported by):** `src/app/(app)/settings/page.tsx`.
+
+**Security notes:** none.
+
+**Notes:** the signed-in area has no footer, so this is where signed-in users find Cookie settings.
 
 ---
 
@@ -1376,9 +2067,9 @@ The landing page has no auth logic of its own, but it's the front door to sign-u
 
 | Model (table) | What it holds | Written by | Read by |
 |---|---|---|---|
-| `User` (`users`) | `email` (unique), `name`, `emailVerified`, `image`, `role` (`USER`/`ADMIN`), `passwordHash` (null for Google-only accounts), `sessionVersion` (starts at 0), `lastActiveAt` | `register`, `verifyEmail`, `resetPassword`, `changePassword`, `credentials.ts` (rehash), `auth.ts` (`createUser` event), the Prisma adapter, `recordActivity` | `credentials.ts`, `auth.ts` `jwt` callback, the actions |
+| `User` (`users`) | `email` (unique), `name`, `emailVerified`, `image`, `role` (`USER`/`ADMIN`), `passwordHash` (null for Google-only accounts), `sessionVersion` (starts at 0), `lastActiveAt`, `deletionScheduledFor` (null unless deletion was requested; indexed) | `register`, `verifyEmail`, `resetPassword`, `changePassword`, `credentials.ts` (rehash), `auth.ts` (`createUser` event), the Prisma adapter, `recordActivity`, `requestAccountDeletion` (sets the schedule), `reactivateAccount` (clears it), the purge route (deletes the row) | `credentials.ts`, `auth.ts` `jwt` and `signIn` callbacks, `getDeletionProof`, the actions, the purge route |
 | `Account` (`accounts`) | One row per linked OAuth login (`provider` + `providerAccountId`, unique together), plus the provider's tokens | the Prisma adapter, on Google sign-in | the Prisma adapter |
-| `AuthToken` (`auth_tokens`) | `tokenHash` (unique), `type` (`EMAIL_VERIFICATION` / `PASSWORD_RESET`), `expiresAt`, `userId` | `src/lib/tokens.ts`, `resetPassword` (deletes all of a user's tokens) | `src/lib/tokens.ts` |
+| `AuthToken` (`auth_tokens`) | `tokenHash` (unique), `type` (`EMAIL_VERIFICATION` / `PASSWORD_RESET` / `ACCOUNT_REACTIVATION`), `expiresAt`, `userId` | `src/lib/tokens.ts`, `resetPassword` (deletes all of a user's tokens) | `src/lib/tokens.ts` |
 | `RateLimit` (`rate_limits`) | `key` (e.g. `signin:email:<sha256>`), `count`, `resetAt` (timestamptz) | `src/lib/rate-limit.ts` (raw SQL upsert) | the same |
 | `ActivityEvent` (`activity_events`) | `type` (`SIGN_UP`, `ACTIVE_DAY`, `CHAT_MESSAGE`), `userId` (optional), `createdAt` | `register`, `auth.ts` `createUser` event, `recordActivity` | future admin analytics |
 
@@ -1391,13 +2082,16 @@ The landing page has no auth logic of its own, but it's the front door to sign-u
 **Security notes:**
 - Passwords and tokens are stored only as hashes (Argon2id and SHA-256). Rate-limit keys hash emails and IPs.
 - `sessionVersion` is the "kill switch": incrementing it makes every existing JWT fail the `jwt` callback check.
-- Deleting a user cascades to their `Account` and `AuthToken` rows (`onDelete: Cascade`). Their `ActivityEvent` rows are kept with `userId` set to null (`onDelete: SetNull`), so analytics totals survive account deletion.
+- `deletionScheduledFor` is a second lock: while it's set, the `jwt` callback, password sign-in and Google sign-in all refuse the user. The index lets the purge job find due accounts without scanning every user.
+- Deleting a user cascades to their `Account` and `AuthToken` rows, and to their categories, statements, transactions and subscription (`onDelete: Cascade`). Their `ActivityEvent` and `AuditLog` rows are kept with the user reference set to null (`onDelete: SetNull`), so analytics totals and the audit trail survive account deletion.
 - `@@unique([provider, providerAccountId])` stops one Google account being attached twice.
 
 **Notes:**
 - `Account` stores Google's `access_token`, `refresh_token` and `id_token` in plain text (the Prisma adapter's standard schema). SpendSense doesn't use them after sign-in. If they're ever needed, consider encrypting them, or don't keep them at all.
 - `email` is optional (`String?`) because Auth.js's adapter schema allows providers without email. Every SpendSense sign-in method does supply one.
 - There's no `Session` table: sessions are JWTs in a cookie (`strategy: "jwt"`).
+- Migration `20261110195400_add_account_deletion_schedule` added `deletion_scheduled_for` (with its index) and the `ACCOUNT_REACTIVATION` token type.
+- The cookie-consent choice is **not** stored in the database. It lives only in the visitor's `ss_consent` cookie, because most visitors who choose aren't signed in.
 
 ---
 
@@ -1420,6 +2114,8 @@ flowchart LR
     types[next-auth.d.ts]
     route["api/auth/[...nextauth]"]
     nextconfig[next.config.ts]
+    sessionClear["api/session/clear"]
+    purge["api/cron/purge-deleted-accounts"]
   end
 
   subgraph Library
@@ -1431,6 +2127,9 @@ flowchart LR
     email[email.ts]
     request[request.ts]
     activity[activity.ts]
+    accountDeletion[account-deletion.ts]
+    session[session.ts]
+    consent[consent.ts]
   end
 
   subgraph Feature["Feature logic"]
@@ -1444,6 +2143,10 @@ flowchart LR
     aVerify[actions/verify-email]
     aReset[actions/password-reset]
     aChange[actions/change-password]
+    queries[queries.ts]
+    staleGuard[stale-session-guard.tsx]
+    aDelete[actions/delete-account]
+    aReactivate[actions/reactivate-account]
   end
 
   subgraph UI
@@ -1453,6 +2156,9 @@ flowchart LR
       uiField[ui/form-field]
       uiAlert[ui/form-alert]
       uiCard[ui/card]
+      uiDialog[ui/dialog]
+      uiToggle[ui/toggle]
+      uiSettings[ui/settings-section]
       logo[layout/logo]
       siteHeader[layout/site-header]
       headerMenu[layout/header-menu]
@@ -1476,6 +2182,11 @@ flowchart LR
       sidebarUser[sidebar-user]
       signOutBtn[sign-out-button]
       requireSession[require-session]
+      graceTs[deletion-grace]
+      sendLink[send-new-link-link]
+      deleteDialog[delete-account-dialog]
+      dangerZone[danger-zone]
+      profileSection[profile-section]
     end
     subgraph AuthPages["Auth pages"]
       authLayout["(auth)/layout"]
@@ -1484,10 +2195,13 @@ flowchart LR
       pForgot[forgot-password/page]
       pReset[reset-password/page]
       pVerify[verify-email/page]
+      pReactivate[reactivate-account/page]
     end
     subgraph App
       appLayout["(app)/layout"]
       pSettings[settings/password/page]
+      pSettingsMain[settings/page]
+      placeholders[settings/_components/placeholder-sections]
     end
     subgraph Landing
       mLayout["(marketing)/layout"]
@@ -1503,6 +2217,17 @@ flowchart LR
       footer[site-footer]
       scrollTop[scroll-to-top]
     end
+    subgraph Privacy["Cookie consent (privacy)"]
+      events[events.ts]
+      cookieConsent[cookie-consent]
+      banner[cookie-banner]
+      prefsDialog[cookie-preferences-dialog]
+      settingsBtn[cookie-settings-button]
+      loader[analytics-loader]
+      policy[cookie-policy]
+      privacySection[privacy-settings-section]
+      pCookies["(marketing)/cookies/page"]
+    end
   end
 
   %% Config
@@ -1510,18 +2235,26 @@ flowchart LR
   proxy --> authts
   types --> schema
   route --> authts
+  purge --> db & email
 
   %% Library
   db --> schema
   password --> pwrules
   ratelimit --> db
-  tokens --> db
+  tokens --> db & accountDeletion
+  session --> authts
   activity --> db
 
   %% Feature logic
   schemas --> pwrules
   credentials --> db & ratelimit & password & pwrules & request & schemas
-  tracker --> authts & activity
+  tracker --> session & activity
+  queries --> db & session
+  staleGuard --> session
+  staleGuard -.->|redirects| sessionClear
+  aDelete --> authts & db & accountDeletion & email & password & ratelimit & tokens & schemas
+  aDelete -.->|redirects| sessionClear
+  aReactivate --> db & email & ratelimit & request & tokens & schemas
   aRegister --> db & ratelimit & password & tokens & email & request & schemas
   aSignIn --> authts & redirect
   aSignOut --> authts
@@ -1533,35 +2266,43 @@ flowchart LR
   siteHeader --> logo & headerMenu & themeToggle
   appShell --> logo & themeToggle
   themeToggle --> themeScript
-  rootLayout --> themeScript
+  rootLayout --> themeScript & cookieConsent & loader
+  uiSettings --> uiCard
 
   %% Auth components
   splitCard --> logo
   submit --> uiButton
   pwInput --> uiInput
   google --> aSignIn & submit
-  loginForm --> aSignIn & uiAlert & uiField & uiInput & pwInput & submit
+  loginForm --> aSignIn & uiAlert & uiField & uiInput & pwInput & sendLink & submit
   signupForm --> aRegister & pwrules & uiButton & uiAlert & uiField & uiInput & splitCard & google & pwInput & submit
   changeForm --> aChange & pwrules & uiAlert & uiField & pwInput & submit
   headerActions --> authts & uiButton & aSignOut & submit
   sidebarUser --> authts
   signOutBtn --> aSignOut
   requireSession --> authts
+  graceTs --> accountDeletion
+  deleteDialog --> aDelete & queries & uiButton & uiDialog & uiAlert & uiField & uiInput & graceTs & pwInput
+  dangerZone --> uiSettings & queries & changeForm & deleteDialog & graceTs
+  profileSection --> session & uiButton & uiField & uiInput & uiSettings
 
   %% Auth pages
   authLayout --> siteHeader & headerActions
-  pLogin --> uiAlert & splitCard & skeleton & google & loginForm
+  pLogin --> uiAlert & splitCard & graceTs & skeleton & google & loginForm & sendLink
   pSignup --> splitCard & signupForm
   pForgot --> aReset & uiField & uiInput & centeredCard & backToLogin & skeleton & submit
   pReset --> aReset & pwrules & uiButton & uiField & centeredCard & backToLogin & skeleton & pwInput & submit
   pVerify --> aVerify & uiButton & uiField & uiInput & centeredCard & backToLogin & skeleton & submit
+  pReactivate --> aReactivate & uiField & uiInput & centeredCard & backToLogin & skeleton & submit
 
   %% App
-  appLayout --> requireSession & appShell & tracker & sidebarUser & signOutBtn
+  appLayout --> requireSession & appShell & staleGuard & tracker & sidebarUser & signOutBtn
   pSettings --> uiCard & changeForm
+  pSettingsMain --> uiSettings & dangerZone & skeleton & profileSection & queries & privacySection & placeholders
+  placeholders --> uiButton & uiField & uiInput & uiSettings & uiToggle
 
   %% Landing
-  mLayout --> siteHeader & headerActions & footer
+  mLayout --> siteHeader & headerActions & footer & settingsBtn
   mPage --> hero & features & how & pricingSec & cta & scrollTop
   hero --> uiButton & intro
   features --> intro
@@ -1570,6 +2311,16 @@ flowchart LR
   plans --> uiButton & pricingTs
   cta --> uiButton
   footer --> logo
+
+  %% Cookie consent (privacy)
+  settingsBtn --> uiButton & events
+  prefsDialog --> consent & uiButton & uiDialog & uiToggle
+  banner --> consent & uiButton
+  cookieConsent --> consent & events & banner & prefsDialog
+  loader --> consent
+  policy --> settingsBtn
+  privacySection --> uiSettings & settingsBtn
+  pCookies --> policy
 ```
 
 ### 2. User journey
@@ -1732,6 +2483,105 @@ sequenceDiagram
   end
 ```
 
+### 6. Account deletion lifecycle
+
+The states an account moves through, and what moves it. `deletionScheduledFor` is the only thing that changes: `null` means Active, a date means Scheduled, and Deleted means the row is gone.
+
+```mermaid
+stateDiagram-v2
+  direction LR
+  [*] --> Active: sign up
+  Active --> Scheduled: requestAccountDeletion (password or email proof)
+  Scheduled --> Active: reactivateAccount (emailed link, before the deadline)
+  Scheduled --> Deleted: purge job (deadline passed)
+  Deleted --> [*]
+
+  note right of Scheduled
+    deletionScheduledFor = request + 48h
+    sessionVersion + 1 (signed out everywhere)
+    sessions, password and Google sign-in all refused
+    "Send a new link" emails a fresh link (same deadline)
+  end note
+
+  note right of Deleted
+    user row deleted, data cascades
+    ActivityEvent and AuditLog kept, user set to null
+    "Your account has been deleted" email
+  end note
+```
+
+### 7. Request flow: deleting an account
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as Browser
+  participant S as /settings
+  participant DD as Delete account dialog
+  participant A as requestAccountDeletion
+  participant D as Database
+  participant M as Email (Resend)
+  participant C as /api/session/clear
+  participant L as /login
+  U->>S: opens Settings
+  S->>D: getDeletionProof() (password or email?)
+  S-->>U: Danger zone (proof decides which field the dialog shows)
+  U->>DD: Delete account (focus starts on Cancel)
+  U->>A: password, or account email
+  A->>A: auth() (must be signed in), rate-limit per user
+  A->>D: find user: passwordHash, email
+  alt has a password
+    A->>A: verifyPassword (Argon2)
+  else Google-only
+    A->>A: typed email == account email?
+  end
+  alt proof wrong
+    A-->>DD: error + field error (dialog stays open)
+  else proof right
+    A->>D: deletionScheduledFor = now + 48h, sessionVersion + 1
+    A->>D: createAuthToken(ACCOUNT_REACTIVATION)
+    Note over A,M: after()
+    A->>M: "scheduled for deletion" + reactivation link
+    A->>A: signOut()
+    A-->>U: redirect /api/session/clear?reason=deletion-scheduled
+    U->>C: GET
+    C-->>U: Clear-Site-Data: "cookies" + expire session cookie, redirect
+    U->>L: /login?status=deletion-scheduled
+    L-->>U: "scheduled for deletion… reactivate within 2 days" banner (cookie banner shows again)
+  end
+```
+
+### 8. Cookie consent flow
+
+Everything here happens in the browser; the server never reads `ss_consent`.
+
+```mermaid
+flowchart TD
+  visit["Page loads (server sends the same HTML to everyone)"] --> read["After mount: readConsentFromDocument()"]
+  read --> valid{"Valid ss_consent?"}
+  valid -- "no: missing, tampered, old version or older than 6 months" --> banner["Cookie banner"]
+  valid -- yes --> loaderCheck
+
+  banner -- "Accept all" --> saveYes["createConsent analytics: true"]
+  banner -- "Reject all" --> saveNo["createConsent analytics: false"]
+  banner -- "Manage preferences" --> dialog["Preferences dialog"]
+  settingsLink["Cookie settings button: footer, /cookies, Settings"] -- "ss:open-cookie-settings" --> dialog
+  dialog -- "Save / Accept all / Reject all" --> choice["createConsent with the choice"]
+
+  saveYes --> write["writeConsentToDocument: ss_consent cookie, 6 months"]
+  saveNo --> write
+  choice --> write
+  write --> event(["CONSENT_CHANGED_EVENT"])
+  event --> hide["Banner hides"]
+  event --> loaderCheck{"Analytics loader: hasConsent analytics?"}
+
+  loaderCheck -- no --> nothing["Nothing loads: no scripts, no _ga cookies"]
+  loaderCheck -- yes --> tools["Load each tool whose env variable is set: Vercel Web Analytics, GA4, Plausible"]
+
+  choice -. "analytics was on, now off" .-> withdraw["Withdrawal: ga-disable flag, clearAnalyticsCookies, reload"]
+  withdraw --> read
+```
+
 ### Reading the diagrams
 
-In the **dependency map**, an arrow means "imports". Follow arrows from a page down to see everything it relies on, or look for arrows *into* a box to see who would be affected if you changed it (for example, `db.ts` and `auth.ts` have the most arrows in). The boxes group files by layer: config at the edge of the framework, the library underneath, feature logic in the middle, UI on top, and the database at the bottom. Nothing in **Library** or **Shared UI** points into a feature, which is the "shared code doesn't depend on features" rule. In the **user journey**, solid arrows are the normal paths and the dotted arrow is an error path. In the **sequence diagrams**, time runs top to bottom: solid arrows are calls, dashed arrows are replies, `alt` boxes show the different outcomes, and `Note … after()` marks work that happens after the browser already has its response.
+In the **dependency map**, an arrow means "imports". Follow arrows from a page down to see everything it relies on, or look for arrows *into* a box to see who would be affected if you changed it (for example, `db.ts` and `auth.ts` have the most arrows in). The boxes group files by layer: config at the edge of the framework, the library underneath, feature logic in the middle, UI on top, and the database at the bottom. Nothing in **Library** or **Shared UI** points into a feature, which is the "shared code doesn't depend on features" rule. The two **dotted arrows labelled "redirects"** aren't imports: `delete-account` and `stale-session-guard` send the browser to `api/session/clear`, because only a route handler can send the `Clear-Site-Data` header. In the **user journey**, solid arrows are the normal paths and the dotted arrow is an error path. In the **sequence diagrams**, time runs top to bottom: solid arrows are calls, dashed arrows are replies, `alt` boxes show the different outcomes, and `Note … after()` marks work that happens after the browser already has its response. In the **deletion lifecycle**, each box is a state the account can be in and each arrow is what moves it there; the yellow notes say what's true while it's in that state. In the **cookie consent flow**, diamonds are decisions, the rounded box is the browser event that connects the banner, dialog and loader without them importing each other, and the dotted arrow is the withdrawal path that reloads the page.
