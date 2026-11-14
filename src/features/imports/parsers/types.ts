@@ -40,3 +40,27 @@ export type ReadFailure = "not_text" | "empty" | "too_many_rows";
 export type ReadResult =
   | { ok: true; grid: Grid }
   | { ok: false; reason: ReadFailure };
+
+export type ColumnRole =
+  | "date"
+  | "description"
+  | "amount"
+  | "moneyIn"
+  | "moneyOut"
+  | "balance"
+  | "externalId";
+
+/** Which column of the grid plays each role. */
+export type ColumnMapping = Partial<Record<ColumnRole, number>>;
+
+export type DetectionResult = {
+  /** Position of the header row in the grid, or -1 when there isn't one. */
+  headerRowIndex: number;
+  /** Header text for each column, or "Column 1"… when there is no header row. */
+  headers: string[];
+  mapping: ColumnMapping;
+  /** Roles worked out from cell contents, for the dialog to highlight. */
+  uncertain: ColumnRole[];
+  dateOrder: "dmy" | "mdy";
+  dateOrderCertain: boolean;
+};
