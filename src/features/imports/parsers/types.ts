@@ -36,7 +36,7 @@ export type NormaliseResult = {
 /** A file as rows of text cells, whichever format it came from. */
 export type Grid = string[][];
 
-export type ReadFailure = "not_text" | "empty" | "too_many_rows";
+export type ReadFailure = "not_text" | "empty" | "too_many_rows" | "not_spreadsheet";
 
 export type ReadResult =
   | { ok: true; grid: Grid }
