@@ -68,7 +68,7 @@ export function findHeaderRow(grid: Grid): number {
     const isPlainText =
       row.some((cell) => cell !== "") &&
       row.every((cell) => !isDateCell(cell) && !isMoneyCell(cell));
-    const nextIsData = next.some(isDateCell) && next.some(isMoneyCell);
+    const nextIsData = next.some(isDateCell) || next.some(isMoneyCell);
     if (isPlainText && nextIsData) return i;
   }
 
