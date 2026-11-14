@@ -31,3 +31,12 @@ export type NormaliseResult = {
   skippedZero: number;
   issues: RowIssue[];
 };
+
+/** A file as rows of text cells, whichever format it came from. */
+export type Grid = string[][];
+
+export type ReadFailure = "not_text" | "empty" | "too_many_rows";
+
+export type ReadResult =
+  | { ok: true; grid: Grid }
+  | { ok: false; reason: ReadFailure };
