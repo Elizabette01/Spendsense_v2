@@ -38,6 +38,8 @@ enum CategoryType {
 enum FileType {
   CSV
   PDF
+  XLSX
+  XLS
 
   @@map("file_type")
 }
@@ -191,6 +193,9 @@ model Statement {
   periodEnd    DateTime?       @map("period_end") @db.Date
   status       StatementStatus @default(PROCESSING)
   errorMessage String?         @map("error_message")
+  importedCount  Int @default(0) @map("imported_count")
+  duplicateCount Int @default(0) @map("duplicate_count")
+  skippedCount   Int @default(0) @map("skipped_count")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
