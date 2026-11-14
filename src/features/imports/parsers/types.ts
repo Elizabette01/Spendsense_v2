@@ -7,6 +7,7 @@ export type ParsedRow = {
   moneyOutMinor: number | null;
   description: string;
   externalId: string | null;
+  balanceMinor?: number | null;
 };
 
 /** One row ready to save: a single signed amount. */
