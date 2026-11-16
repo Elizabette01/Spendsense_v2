@@ -75,7 +75,7 @@ export function isMappableFailure(
   return failure === "no_date_column" || failure === "no_amount_column";
 }
 
-function bankNameOf(read: SuccessfulRead): string | null {
+export function bankNameOf(read: SuccessfulRead): string | null {
   if (read.kind === "grid") return read.analysis.bank?.name ?? null;
   return read.analysis.bank ? PDF_BANK_NAMES[read.analysis.bank] : null;
 }
