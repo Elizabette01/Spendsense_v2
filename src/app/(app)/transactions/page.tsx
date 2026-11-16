@@ -14,7 +14,13 @@ export default function TransactionsPage({ searchParams }: { searchParams: Searc
   return (
     <div className="mx-auto flex max-w-269 flex-col gap-8">
       <div>
-        <h1 className="text-page-title text-heading">Transactions</h1>
+        <h1
+          id="transactions-heading"
+          tabIndex={-1}
+          className="text-page-title text-heading focus:outline-none"
+        >
+          Transactions
+        </h1>
         <p className="text-body text-foreground-muted">
           Every transaction from your statements, sorted into categories
         </p>

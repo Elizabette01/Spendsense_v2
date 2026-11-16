@@ -19,13 +19,33 @@ type Props = {
 };
 
 /** The category cell: shows the category (or "Needs review") and opens the change dialog. */
+/**
+ * After saving, a row can leave the list (the "Needs review" filter), taking this
+ * button and its dialog with it, so focus would drop to the page. If that happens,
+ * put focus on the page heading instead. Gives up after 5 seconds (e.g. on an error).
+ */
+function focusHeadingIfRowLeaves(row: HTMLElement | null) {
+  if (!row) return;
+  const started = Date.now();
+  const check = () => {
+    if (!row.isConnected) {
+      document.getElementById("transactions-heading")?.focus();
+    } else if (Date.now() - started < 5000) {
+      setTimeout(check, 100);
+    }
+  };
+  setTimeout(check, 100);
+}
+
 export function CategoryControl({ transactionId, merchant, category, categories }: Props) {
   const [open, setOpen] = useState(false);
   const [openCount, setOpenCount] = useState(0);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   return (
     <>
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => {
           setOpenCount((count) => count + 1);
@@ -53,6 +73,7 @@ export function CategoryControl({ transactionId, merchant, category, categories 
           merchant={merchant}
           currentId={category?.id ?? ""}
           categories={categories}
+          onSubmit={() => focusHeadingIfRowLeaves(buttonRef.current)}
         />
       )}
     </>
@@ -75,7 +96,9 @@ function CategoryDialog({
   merchant,
   currentId,
   categories,
+  onSubmit,
 }: {
+  onSubmit: () => void;
   open: boolean;
   onClose: () => void;
   transactionId: string;
@@ -111,7 +134,7 @@ function CategoryDialog({
         </>
       }
     >
-      <form id={formId} action={action} className="flex flex-col gap-4">
+      <form id={formId} action={action} onSubmit={onSubmit} className="flex flex-col gap-4">
         <p className="text-body text-foreground-secondary">
           <span className="font-semibold text-foreground">{merchant}</span>
         </p>
