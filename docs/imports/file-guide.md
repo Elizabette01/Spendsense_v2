@@ -1,6 +1,6 @@
 # SpendSense imports: file guide
 
-This guide maps the statement import backend: how an uploaded file becomes saved transactions, how duplicates are handled, and how a statement is listed and deleted. It covers the files added or changed in B8 Phase 1 (on `feat/import-actions`), written from reading the code as it is. The parsers in `src/features/imports/parsers/` were built earlier and aren't changed here; they're summarised in one short section so you know where they fit. "Used by" lists come from searching the codebase for imports. For the big picture first, jump to [How it all connects](#how-it-all-connects), then come back to the files.
+This guide maps the statement import backend: how an uploaded file becomes saved transactions, how duplicates are handled, and how a statement is listed and deleted. It covers the files added or changed in B8 Phase 1 (on `feat/import-actions`) and Phase 2 (built-in categorisation and recategorising, on `feat/categorisation`), written from reading the code as it is. The parsers in `src/features/imports/parsers/` were built earlier and aren't changed here; they're summarised in one short section so you know where they fit. "Used by" lists come from searching the codebase for imports. For the big picture first, jump to [How it all connects](#how-it-all-connects), then come back to the files.
 
 Each entry uses the template from `docs/auth/file-guide.md`, plus a **Must never** line: the rules each file exists to protect.
 
@@ -20,8 +20,17 @@ Each entry uses the template from `docs/auth/file-guide.md`, plus a **Must never
 - [`actions/import-statement.ts`](#actionsimport-statementts)
 - [`actions/delete-statement.ts`](#actionsdelete-statementts)
 
+**Phase 2: categorisation (`src/lib/categorisation/`) and transactions**
+- [Database: `RULE` and `merchant_rules`](#database-rule-and-merchant_rules)
+- [`src/lib/categorisation/merchant.ts`](#srclibcategorisationmerchantts)
+- [`src/lib/categorisation/rules.ts`](#srclibcategorisationrulests)
+- [`src/lib/categorisation/categorise.ts`](#srclibcategorisationcategorisets)
+- [`src/features/transactions/queries.ts`](#srcfeaturestransactionsqueriests)
+- [`src/features/transactions/actions/recategorise.ts`](#srcfeaturestransactionsactionsrecategorisets)
+
 **Tests**
 - [The four new test files](#the-four-new-test-files)
+- [Phase 2 tests](#phase-2-tests)
 
 **Demo data and the dev page**
 - [`docs/demo/synthetic-statement.csv`](#docsdemosynthetic-statementcsv)
@@ -40,7 +49,7 @@ Each entry uses the template from `docs/auth/file-guide.md`, plus a **Must never
 **Runs on:** server only (`server-only`).
 
 **Exports:**
-- `LIMITS`: named limits. The import ones are `previewStatementUser` (30/hour), `importStatementUser` (10/hour) and the new `deleteStatementUser` (20/hour).
+- `LIMITS`: named limits. The import ones are `previewStatementUser` (30/hour), `importStatementUser` (10/hour) and `deleteStatementUser` (20/hour, Phase 1). Phase 2 added `recategoriseUser` (120/hour), generous because people tidy many rows in one sitting.
 - `rateLimit(key, limit)`: counts this attempt and returns `{ allowed, remaining, resetAt }`.
 - `hashIdentifier`, `deleteExpiredRateLimits`: unchanged.
 
@@ -163,7 +172,7 @@ Built before Phase 1 and unchanged (tests pass):
 **Exports:**
 - `importStatement(prevState, formData)` → `ImportState`: `idle`, `error` (`reason`, `message`) or `done` (`result`).
   - Fields: `file`, optional `mapping` (JSON), optional `dateOrder`, required `decisions` (JSON, `duplicateDecisionsSchema`).
-- `ImportResult`: `statementId`, `importedCount`, `duplicateCount` (flagged rows skipped), `skippedCount` (zero-amount rows), `issueCount` (rows that couldn't be read), `categorisedCount` (0 until Phase 2), `needsReviewCount` (= `importedCount` until Phase 2), `periodStart` / `periodEnd` (ISO dates).
+- `ImportResult`: `statementId`, `importedCount`, `duplicateCount` (flagged rows skipped), `skippedCount` (zero-amount rows), `issueCount` (rows that couldn't be read), `categorisedCount` (rows given a category by the user's rules or the built-in rules), `needsReviewCount` (rows with no category), `periodStart` / `periodEnd` (ISO dates).
 - `ImportFailureReason`: every preview reason, plus `needs_decision`, `nothing_to_import` and `conflict`.
 
 **Depends on (imports):**
@@ -183,7 +192,8 @@ Built before Phase 1 and unchanged (tests pass):
 6. **Fingerprint and flag** against the database *now*. If another tab imported the same rows since the preview, they're flagged here.
 7. **Apply decisions.** For each flagged row: `overrides[fingerprint]`, else `defaultChoice`. No decision at all → `needs_decision`, and nothing is saved (the action never guesses). `skip` → counted in `duplicateCount`. `import` → `assignFreeFingerprints` gives the row a fingerprint nothing else uses (every fingerprint in the file is reserved), keeping file order. If no free fingerprint is found → `unexpected`.
 8. **Nothing left** → `nothing_to_import`, nothing saved.
-9. **Save in one `db.$transaction`** (timeout 60 s): create the `Statement` (`COMPLETED`, cleaned file name, file type, bank name, period, counts), then `createMany` transactions in chunks of 1,000. If any step throws, Postgres rolls everything back.
+8b. **Categorise** (Phase 2): load the user's `MerchantRule`s once (one query, not one per row), run `categoriseRows` from `@/lib/categorisation/categorise`, and count how many rows got a category.
+9. **Save in one `db.$transaction`** (timeout 60 s): create the `Statement` (`COMPLETED`, cleaned file name, file type, bank name, period, counts), then `createMany` transactions in chunks of 1,000, each with its `merchant`, `categoryId` and `categorisedBy`. If any step throws, Postgres rolls everything back.
 10. **Errors.** Prisma `P2002` (the unique `[userId, fingerprint]` index was hit because two imports raced) → `conflict`, "Please try again." Anything else → log `error.name` only → `unexpected`.
 11. **After the response,** `after()` records an `ActivityEvent` of type `STATEMENT_IMPORT`, inside its own `try/catch`, so a failure there never breaks the import.
 12. **Refresh** `/imports`, `/transactions` and `/dashboard` with `revalidatePath`, and return `done`.
@@ -221,6 +231,144 @@ Built before Phase 1 and unchanged (tests pass):
 
 ---
 
+## Phase 2: categorisation and transactions
+
+### Database: `RULE` and `merchant_rules`
+
+Two migrations, one each:
+
+**`20261116173449_add_rule_categorised_by`**
+```sql
+ALTER TYPE "categorised_by" ADD VALUE 'RULE';
+```
+`Transaction.categorisedBy` records *who* chose a category: `USER`, `RULE` (the built-in keyword rules) or `AI` (later). `null` means nobody has, so the row needs review. Keeping "who" lets a later step know what it may and may not overwrite.
+
+**`20261116173525_add_merchant_rules`**: the `MerchantRule` model (table `merchant_rules`): `id`, `userId`, `merchantKey`, `categoryId`, `createdAt`, `updatedAt`.
+```sql
+CREATE TABLE "merchant_rules" (
+    "id" TEXT NOT NULL,
+    "user_id" TEXT NOT NULL,
+    "merchant_key" TEXT NOT NULL,
+    "category_id" TEXT NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "merchant_rules_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX "merchant_rules_category_id_idx" ON "merchant_rules"("category_id");
+CREATE UNIQUE INDEX "merchant_rules_user_id_merchant_key_key" ON "merchant_rules"("user_id", "merchant_key");
+ALTER TABLE "merchant_rules" ADD CONSTRAINT "merchant_rules_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "merchant_rules" ADD CONSTRAINT "merchant_rules_category_id_fkey" FOREIGN KEY ("category_id") REFERENCES "categories"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+```
+- **One rule per merchant per user** (`@@unique([userId, merchantKey])`). That's what makes `upsert` possible.
+- **Cascades:** deleting a user deletes their rules; deleting a category deletes rules that point to it, so no rule ever points at nothing.
+- `@@index([categoryId])` keeps that cascade fast.
+
+**Must never:** be read without `where: { userId }`.
+
+### `src/lib/categorisation/merchant.ts`
+
+**What it does:** Turns raw bank text into a clean merchant name, and a lowercase key for matching. `"TESCO STORES 4521 LONDON GB"` → `"Tesco Stores"` → key `"tesco stores"`.
+
+**Runs on:** both (pure functions; no imports at all).
+
+**Exports:**
+- `deriveMerchant(description)` → `string`, never empty (falls back to the description, then `"Unknown"`), at most 100 characters. Steps: payment-type and processor prefixes (`CARD PAYMENT TO`, `DD`, `SQ *`, `PAYPAL *`), anything after a `*`, web domains, dates, times, references, masked card numbers, words containing digits (store numbers), then trailing cities, countries, legal suffixes (`LTD`, `PLC`) and payment words (`DD`, `REFUND`), then title case with a few acronyms kept (`TfL`, `HMRC`, `KFC`).
+- `merchantKey(merchant)` → lowercase letters, digits and `&`, single spaces. Two spellings of one merchant ("Co-Op", "CO OP") share a key.
+
+**Used by (imported by):** `categorise.ts` (deciding categories), `src/features/transactions/actions/recategorise.ts` (finding a row's merchant and its rule key).
+
+**Why it's built this way:** Rules are remembered per merchant, so the same shop must always produce the same key, whichever branch or card number appears in the text. Being pure makes it easy to test with a table of real-looking examples.
+
+**Must never:** return an empty string, or depend on the database.
+
+### `src/lib/categorisation/rules.ts`
+
+**What it does:** The built-in keyword rules: common UK merchants and payment words mapped to the 25 seeded system category ids in `prisma/seed.ts`. One ordered list; the **first matching rule wins**, so specific rules sit above broad ones ("TESCO MOBILE" is a bill before "TESCO" is groceries; "UBER EATS" is eating out before "UBER" is transport; shopping, with broad names like "NEXT" and "AMAZON", comes last).
+
+**Runs on:** both (pure).
+
+**Exports:**
+- `matchBuiltInRule(description, amountMinor)` → a system category id, or `null`.
+- `RULES`: the ordered list (exported for tests).
+- `SystemCategoryId`: the 25 seeded ids as a type, so a typo in a rule is a type error.
+
+**Sign-aware matching:**
+- **Money out**: rules marked `out` or `any`. Income categories are never used.
+- **Money in**: rules marked `in` or `any` (salary, benefits, refunds, interest, savings and transfers). If none matches but a spending rule does ("TESCO", "RYANAIR"), the money came back from a shop, so it's `sys_refunds`.
+- **Savings and transfers** (`any`): Monzo pots, ISAs, own-account and credit-card payments. They're type `TRANSFER`, so the dashboard won't count them as income or spending.
+- Words match **whole words only** (`SKYSCANNER` is not `SKY`; `CASHBACK` is not `CASH`; `PARENTAL` doesn't contain the word `RENT`).
+
+**Why it's built this way:** Simple keyword rules are predictable, fast and testable, and they cover most everyday spending. Anything uncertain is left for the user (and later the AI) rather than guessed.
+
+**Must never:** fall back to `sys_general` for an unknown row, or give an income category to money out.
+
+### `src/lib/categorisation/categorise.ts`
+
+**What it does:** The **single entry point** for categorising. For each row it returns `{ merchant, categoryId, categorisedBy }`.
+
+**Runs on:** both (pure).
+
+**Exports:**
+- `categoriseRows(rows, userRules)` → one `CategoryDecision` per row, in order. `rows` are `{ description, amountMinor }`; `userRules` are `{ merchantKey, categoryId }`.
+- Types: `CategorisableRow`, `UserMerchantRule`, `CategoryDecision`, `CategorisedBy`.
+
+**Order:** 1. the user's merchant rule (`USER`), whatever the sign; 2. a built-in rule (`RULE`); 3. AI (not built; a marked comment shows exactly where it goes); 4. `null`: needs review.
+
+**Depends on (imports):** `./merchant`, `./rules`.
+
+**Used by (imported by):** `src/features/imports/actions/import-statement.ts`.
+
+**Room for AI:** only rows still `null` after the rules will be sent to the AI categoriser, which will set `categorisedBy: "AI"`. AI never overrides `USER` or `RULE`. When that's added, the function becomes `async`, and its one caller awaits it.
+
+**Must never:** override a user's rule with a built-in one, or guess.
+
+### `src/features/transactions/queries.ts`
+
+**What it does:** Database reads for the transactions page and the category picker.
+
+**Runs on:** server only (`server-only`). They read the session, so call them from server components inside `<Suspense>`, after `await connection()`.
+
+**Exports:**
+- `getTransactions({ page, review })` → `{ transactions, page, pageCount, totalCount }`. 50 per page (`TRANSACTIONS_PER_PAGE`), newest first, with `merchant`, `amountMinor`, `categorisedBy` and the category's `id`, `name` and `type`. `review: true` returns only rows with no category. `page` can come straight from the URL: anything that isn't a whole number ≥ 1 becomes 1, and a page past the end shows the last page.
+- `getCategories()` → system categories plus the user's own, each with `isOwn`, sorted by type then name.
+- `getNeedsReviewCount()` → how many of the user's rows have no category.
+
+**Depends on (imports):** `@/lib/session`, `@/lib/db`, `@/generated/prisma/client` (types).
+
+**Used by (imported by):** nothing yet; the `/transactions` page in Phase 3.
+
+**Security notes:** Every query is filtered by `userId` from the session. Signed out returns empty results. Sorting by date, then `createdAt`, then `id` keeps same-day rows from jumping between pages.
+
+**Must never:** accept a user id, or return another user's categories.
+
+### `src/features/transactions/actions/recategorise.ts`
+
+**What it does:** Changes a transaction's category, and optionally every transaction from the same merchant, and remembers that choice for future imports.
+
+**Runs on:** server action file (`"use server"`). Used with `useActionState`.
+
+**Exports:**
+- `recategoriseTransaction(prevState, formData)` → `RecategoriseState`: `idle`, `error` (`message`) or `done` (`updatedCount`). Fields: `transactionId`, `categoryId`, `applyToMerchant` (a checkbox: `"on"` when ticked, missing when not; `"true"`/`"false"` also accepted).
+
+**Steps:**
+1. Auth (`auth()`), rate limit `recategorise:user:<id>` (120/hour), Zod.
+2. The transaction must be this user's (`findFirst where { id, userId }`).
+3. The category must be a system one or this user's own (`where { id, OR: [{ userId: null }, { userId }] }`).
+4. In one `db.$transaction`:
+   - always: update that row to the category, `categorisedBy: "USER"` (and save its merchant if it had none: rows imported in Phase 1 have no merchant);
+   - with `applyToMerchant`: find this user's merchant names whose `merchantKey` matches, update all their rows, and `upsert` the `MerchantRule` (create it, or change the existing one).
+5. Refresh `/transactions` and `/dashboard` with `revalidatePath`; return the number of rows changed.
+
+**Depends on (imports):** `@/auth`, `@/lib/db`, `@/lib/rate-limit`, `@/lib/categorisation/merchant`, `zod`, `next/cache`.
+
+**Used by (imported by):** nothing yet; the category dialog on `/transactions` in Phase 3.
+
+**Why match by key, not by name:** imports match rules by `merchantKey`, so the merchant-wide update uses the same test. "Tesco Stores" and "TESCO STORES" are one merchant.
+
+**Security notes:** session-only user id; every read and write includes `userId`; a foreign category or transaction gets an error and changes nothing; errors log `error.name` only.
+
+**Must never:** change another user's rows, or accept a category the user can't see.
+
 ## Tests
 
 ### The four new test files
@@ -233,6 +381,14 @@ All use invented data. None touch a real database: `db`, `auth` and `rateLimit` 
 - **`actions/delete-statement.test.ts`** (8 tests): own statement deleted and views refreshed, another user's statement can't be deleted, missing id gets the same answer, signed out, rate limited, three bad ids.
 
 The fake `$transaction` keeps rows only if the callback finishes without throwing, the same promise Postgres makes, so "nothing saved" checks are meaningful.
+
+### Phase 2 tests
+
+- **`src/lib/categorisation/merchant.test.ts`** (31): a table of descriptions → merchant names (store numbers, cities, prefixes, processors, domains, dates, references, card numbers, acronyms), fallbacks, never empty, length cap, and `merchantKey`.
+- **`src/lib/categorisation/rules.test.ts`** (74): a table of description → category for money out and money in, refunds from shops, income never used for money out, savings both ways, rows that must stay `null`, whole-word matching, and checks that every rule uses a seeded id and every seeded category is covered.
+- **`src/lib/categorisation/categorise.test.ts`** (7): user rule → built-in rule → needs review; user rule beats built-in; user rules work whatever the sign; matched by key; never General; order kept.
+- **`import-statement.test.ts`** (now 25): saved rows carry merchant, category and `categorisedBy`; this user's rules are used and another user's aren't; rules are loaded once; categories stay lined up with rows across insert chunks.
+- **`src/features/transactions/actions/recategorise.test.ts`** (14): signed out, rate limited, bad input, another user's transaction, another user's category, a missing category, one row only (no rule saved), the user's own category, merchant-wide update (by key, this user only), rule created, rule updated not duplicated, merchant worked out for an older row.
 
 ---
 
@@ -316,6 +472,46 @@ sequenceDiagram
         A->>A: revalidatePath ×3
         A-->>B: done
     end
+```
+
+### Request flow: recategorising a transaction
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Browser (category dialog)
+    participant A as recategoriseTransaction
+    participant DB as Postgres
+    B->>A: transactionId, categoryId, applyToMerchant
+    A->>A: auth(), rate limit, Zod
+    A->>DB: transaction where id AND userId
+    A->>DB: category where id AND (system OR userId)
+    alt not theirs / not allowed
+        A-->>B: error, nothing changed
+    else allowed
+        A->>DB: $transaction begins
+        A->>DB: update this row (categorisedBy USER)
+        opt applyToMerchant
+            A->>DB: this user's merchants with the same key
+            A->>DB: update all their rows (USER)
+            A->>DB: upsert MerchantRule (userId, merchantKey)
+        end
+        A->>A: revalidatePath /transactions /dashboard
+        A-->>B: done, updatedCount
+    end
+```
+
+### How a row gets its category on import
+
+```mermaid
+flowchart LR
+    R[row: description + amount] --> M[deriveMerchant, merchantKey]
+    M --> U{user's MerchantRule<br/>for this key?}
+    U -- yes --> USER[categorisedBy USER]
+    U -- no --> K{built-in rule?<br/>sign-aware}
+    K -- yes --> RULE[categorisedBy RULE]
+    K -- no --> AI[AI: later, not built]
+    AI -.-> N[null: needs review]
 ```
 
 ### Reading the diagrams
