@@ -13,6 +13,7 @@ import {
   type StatementPreview,
 } from "../server/build-preview";
 import { findExistingFingerprints, flagDuplicates } from "../server/duplicates";
+import { jsonField, textField } from "../server/form-fields";
 import {
   MAX_FILE_BYTES,
   readStatement,
@@ -40,19 +41,6 @@ const STATEMENT_MESSAGE =
 
 function fail(reason: PreviewFailureReason, message: string): PreviewState {
   return { status: "error", reason, message };
-}
-
-function jsonField(value: FormDataEntryValue | null): unknown {
-  if (typeof value !== "string" || value === "") return undefined;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
-  }
-}
-
-function textField(value: FormDataEntryValue | null): unknown {
-  return typeof value === "string" && value !== "" ? value : undefined;
 }
 
 export async function previewStatement(
