@@ -2,6 +2,7 @@
 // Not linked from anywhere. Remove in Phase 3 (with Elizabette's approval).
 
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
 import { Suspense } from "react";
 
 import { getStatements } from "@/features/imports/queries";
@@ -28,6 +29,7 @@ export default function ImportCheckPage() {
 }
 
 async function StatementList() {
+  await connection(); // request-time only (see header-auth-actions)
   const statements = await getStatements();
   if (statements.length === 0) {
     return <p className="text-body text-foreground-muted">No statements (or signed out).</p>;
