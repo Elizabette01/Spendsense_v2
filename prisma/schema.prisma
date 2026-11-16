@@ -55,6 +55,7 @@ enum StatementStatus {
 enum CategorisedBy {
   AI
   USER
+  RULE
 
   @@map("categorised_by")
 }
@@ -120,6 +121,7 @@ model User {
   auditLogsAsAdmin  AuditLog[]      @relation("AuditAdmin")
   auditLogsAsTarget AuditLog[]      @relation("AuditTarget")
   authTokens        AuthToken[]
+  merchantRules     MerchantRule[]
   @@index([deletionScheduledFor])
   
 
@@ -177,11 +179,30 @@ model Category {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  user         User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  transactions Transaction[]
+  user          User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions  Transaction[]
+  merchantRules MerchantRule[]
 
   @@unique([userId, name])
   @@map("categories")
+}
+
+// A user's remembered choice: transactions from this merchant go in this category
+model MerchantRule {
+  id          String @id @default(cuid())
+  userId      String @map("user_id")
+  merchantKey String @map("merchant_key")
+  categoryId  String @map("category_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, merchantKey])
+  @@index([categoryId])
+  @@map("merchant_rules")
 }
 
 model Statement {

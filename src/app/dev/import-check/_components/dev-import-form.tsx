@@ -17,6 +17,10 @@ import {
   previewStatement,
   type PreviewState,
 } from "@/features/imports/actions/preview-statement";
+import {
+  recategoriseTransaction,
+  type RecategoriseState,
+} from "@/features/transactions/actions/recategorise";
 
 const fieldClass =
   "w-full rounded-control border border-border bg-card p-2 text-body text-foreground";
@@ -103,6 +107,37 @@ export function DevDeleteButton({ statementId }: { statementId: string }) {
           {JSON.stringify(state)}
         </span>
       )}
+    </form>
+  );
+}
+
+export function DevRecategoriseForm() {
+  const [state, action, pending] = useActionState(
+    recategoriseTransaction,
+    { status: "idle" } as RecategoriseState,
+  );
+  return (
+    <form action={action} className="space-y-3">
+      <div>
+        <label htmlFor="transactionId" className="text-label text-foreground">
+          transactionId
+        </label>
+        <input id="transactionId" name="transactionId" className={fieldClass} />
+      </div>
+      <div>
+        <label htmlFor="categoryId" className="text-label text-foreground">
+          categoryId
+        </label>
+        <input id="categoryId" name="categoryId" className={fieldClass} />
+      </div>
+      <label className="flex items-center gap-2 text-body text-foreground">
+        <input type="checkbox" name="applyToMerchant" defaultChecked />
+        applyToMerchant
+      </label>
+      <button disabled={pending} className={buttonClass}>
+        {pending ? "Saving…" : "Recategorise"}
+      </button>
+      <ResultBlock title="recategoriseTransaction result" value={state} />
     </form>
   );
 }
