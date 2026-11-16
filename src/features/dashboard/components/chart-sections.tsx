@@ -4,11 +4,8 @@ import { monthStart } from "@/lib/finance/months";
 import { formatMoney } from "@/lib/format";
 
 import type { BreakdownSlice, MonthBars } from "../build";
-import {
-  EXPENSES_CLASS,
-  INCOME_CLASS,
-  IncomeExpensesChart,
-} from "./income-expenses-chart";
+import { EXPENSES_CLASS, INCOME_CLASS } from "./chart-colors";
+import { IncomeExpensesChart } from "./income-expenses-chart";
 import { SectionCard, TableView } from "./section-card";
 import { SpendingDonut } from "./spending-donut";
 

@@ -4,25 +4,18 @@ import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
 
 import { formatMoney } from "@/lib/format";
 
-export type IncomeExpensesPoint = { label: string; incomeMinor: number; expensesMinor: number };
+import { EXPENSES_CLASS, INCOME_CLASS, niceTicks } from "./chart-colors";
 
-/*
- * Colours are design tokens, applied with `currentColor` so dark mode can
- * choose its own step. Checked with the dataviz palette validator:
- *   light: brand-600 + coral on the white card: pass (with legend and bar gap)
- *   dark:  brand-400 + coral-strong on the dark card: pass; coral-strong is just
- *          under 3:1, so the visible table view below is required, not optional.
- */
-export const INCOME_CLASS = "text-brand-600 dark:text-brand-400";
-export const EXPENSES_CLASS = "text-coral dark:text-coral-strong";
+export type IncomeExpensesPoint = { label: string; incomeMinor: number; expensesMinor: number };
 
 function axisPounds(minor: number): string {
   const pounds = minor / 100;
-  return pounds >= 1000 ? `£${Math.round(pounds / 1000)}k` : `£${Math.round(pounds)}`;
+  return pounds >= 1000 ? `£${Number((pounds / 1000).toFixed(1))}k` : `£${Math.round(pounds)}`;
 }
 
 /** Grouped bars: income and expenses for each of the last six months. */
 export function IncomeExpensesChart({ data }: { data: IncomeExpensesPoint[] }) {
+  const ticks = niceTicks(Math.max(...data.flatMap((point) => [point.incomeMinor, point.expensesMinor])));
   return (
     <div aria-hidden="true" className="h-60 w-full text-foreground-muted">
       <BarChart
@@ -42,6 +35,8 @@ export function IncomeExpensesChart({ data }: { data: IncomeExpensesPoint[] }) {
         />
         <YAxis
           width={44}
+          ticks={ticks}
+          domain={[0, ticks[ticks.length - 1]]}
           tickLine={false}
           axisLine={false}
           tickFormatter={axisPounds}

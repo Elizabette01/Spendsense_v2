@@ -138,7 +138,10 @@ export function buildDashboard(rows: readonly DashboardRow[]): DashboardData {
     return { key, incomeMinor: totals.incomeMinor, expensesMinor: totals.expensesMinor };
   });
 
-  const recurring = detectRecurring(rows);
+  // Upcoming only: a payment already overdue by the latest transaction has
+  // probably stopped, so it isn't shown as recurring any more
+  const latest = Math.max(...rows.map((row) => row.date.getTime()));
+  const recurring = detectRecurring(rows).filter((payment) => payment.nextDue.getTime() > latest);
   const monthsWithData = new Set(rows.map((row) => monthKey(row.date))).size;
 
   return {

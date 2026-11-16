@@ -86,6 +86,22 @@ describe("buildDashboard", () => {
   });
 });
 
+describe("recurring on the dashboard", () => {
+  const monthly = (merchant: string, days: string[], amount: number) =>
+    days.map((iso) => row(iso, amount, merchant, BILLS));
+
+  it("leaves out payments that look stopped (overdue by the latest transaction)", () => {
+    const data = buildDashboard([
+      ...monthly("Netflix", ["2026-08-12", "2026-09-12", "2026-10-12"], -1099),
+      ...monthly("Old Gym", ["2026-07-05", "2026-08-05"], -2999), // next due 5 Sep: overdue
+    ]);
+    if (!data.hasData) throw new Error("expected data");
+    expect(data.recurring.nextDue.map((p) => p.merchant)).toEqual(["Netflix"]);
+    expect(data.recurring.count).toBe(1);
+    expect(data.recurring.monthlyTotalMinor).toBe(1099);
+  });
+});
+
 describe("buildBreakdown", () => {
   const month = [
     row("2026-10-01", -60_000, "Tesco", GROCERIES),
