@@ -84,6 +84,7 @@ enum ActivityType {
   SIGN_UP
   ACTIVE_DAY
   CHAT_MESSAGE
+  STATEMENT_IMPORT
 
   @@map("activity_type")
 }
