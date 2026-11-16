@@ -16,7 +16,7 @@ export function SectionCard({
   return (
     <section
       aria-labelledby={id}
-      className={`flex flex-col gap-4 rounded-card bg-card p-5 shadow-card sm:p-6 ${className}`}
+      className={`flex min-w-0 flex-col gap-4 rounded-card bg-card p-5 shadow-card sm:p-6 ${className}`}
     >
       <div>
         <h2 id={id} className="text-card-title text-heading">
