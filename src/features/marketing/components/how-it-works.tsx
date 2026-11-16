@@ -12,7 +12,7 @@ const STEPS = [
     number: "01",
     icon: "↑",
     title: "Upload",
-    text: "Export a CSV or PDF from your bank and drop it into SpendSense",
+    text: "Export your statement from your bank (CSV, Excel and PDF all work) and drop it into SpendSense",
   },
   {
     number: "02",

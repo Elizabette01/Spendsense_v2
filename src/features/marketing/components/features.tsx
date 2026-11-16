@@ -23,8 +23,8 @@ export function Features() {
         <FeatureRow
           tag="Import"
           title="Upload your bank statements in seconds"
-          description="Simply export a CSV or PDF from your bank and drop it into SpendSense. Smart column detection maps your data automatically."
-          points={["Auto column detection", "CSV & PDF support", "Deduplication"]}
+          description="Simply export your statement from your bank and drop it into SpendSense. CSV, Excel and PDF all work. Smart column detection maps your data automatically."
+          points={["Auto column detection", "CSV, Excel and PDF", "Deduplication"]}
           preview={<ImportPreview />}
         />
         <FeatureRow
