@@ -125,14 +125,14 @@ All in `src/features/dashboard/components/`. Server components unless marked.
 - **`chart-sections.tsx`**: the **Income vs expenses** section (chart, legend, table view) and the **Spending breakdown** (donut with the month's total in the middle, legend with amounts, "Needs review" linking to `/transactions?review=1`, table view with shares).
 - **`income-expenses-chart.tsx`** (client): Recharts grouped bars. Round axis steps from `niceTicks`; a token-styled tooltip.
 - **`spending-donut.tsx`** (client): Recharts donut, a 2px gap in the card colour between slices.
-- **`chart-colors.ts`**: chart colour classes and `niceTicks`. A plain module, so server components (legends) and client components (charts) can both import it. (Constants exported from a `"use client"` file arrive in a server component as client references, not text: that's why this file exists.)
+- **`chart-colors.ts`**: chart colour classes (on the `--chart-*` tokens in `globals.css`) and `niceTicks`. A plain module, so server components (legends) and client components (charts) can both import it. (Constants exported from a `"use client"` file arrive in a server component as client references, not text: that's why this file exists.)
 - **`section-card.tsx`**: the card frame (`min-w-0` so charts can shrink at 320px) and `TableView`, the "View as table" disclosure every chart has.
 - **`list-sections.tsx`**: **Recurring payments** (Next due / Most expensive, or "Not enough data yet" with one month of data) and **Top merchants** (amounts as text; the bars only repeat them and are hidden from screen readers).
 - **`dashboard-extras.tsx`**: the **AI advisor bar** (shown, disabled, "Coming soon"), the **empty state** (faded placeholders behind "No data yet" and **Upload your first statement** → `/imports`), and the loading skeletons.
 
-**Chart colours, and why.** Colours are design tokens, applied with `currentColor` so dark mode picks its own step. They were checked with the dataviz palette validator, not by eye:
-- Income vs expenses: light `brand-600` + `coral`; dark `brand-400` + `coral-strong`. Both pass; dark coral-strong is just under 3:1 against the card, so the visible table view is required.
-- Spending breakdown: the top four are ranked largest first, so they're a one-hue ordered ramp (light: `brand-800`, `brand-600`, `brand-400`, `brand-300`; dark: `brand-200` to `brand-500`). "Other" is grey and "Needs review" is coral. Dark passes; light's lightest step is 1.99:1 against white (the floor is 2:1), so every slice is also named, valued and in the table.
+**Chart colours, and why.** Charts use their own tokens in `src/app/globals.css` (`--chart-income`, `--chart-expenses`, `--chart-rank-1` to `-4`, `--chart-other`, `--chart-review`), each with a light and a dark value, exposed to Tailwind as `text-chart-*` and applied with `currentColor`. Every value was checked with the dataviz palette validator, not by eye:
+- Income vs expenses: light `#1a7a4c` + `#d4764e`; dark `#48a872` + `#a8502c`. Both pass; dark expenses is just under 3:1 against the card, so the visible table view is required.
+- Spending breakdown: the top four are ranked largest first, so they're a one-hue ordered ramp (light, darkest = biggest: `#0d4a2e`, `#1a7a4c`, `#48a872`, `#66ba8a`; dark, lightest = biggest: `#b8e0c8`, `#7bc89a`, `#48a872`, `#2d8659`). Both pass. The light end is `#66ba8a` rather than `brand-300`, which was 1.99:1 against white (the floor is 2:1). "Other" is grey and "Needs review" coral; every slice is also named, valued and in the table.
 
 ### `src/app/(app)/dashboard/page.tsx`
 
@@ -185,5 +185,7 @@ Arrows are calls and answers, top to bottom in time order. The page sends its st
 
 - **Recharts 3.10 differs from older examples:** charts size themselves with the `responsive` prop (instead of `ResponsiveContainer`), and `Cell` is deprecated, so slice colours use the `shape` prop.
 - **Recurring false positives in the demo data:** "Steam Purchase" still shows as recurring (two similar purchases on similar days). With only two data points, no simple rule can tell it from a subscription. Step 8 can refine this.
-- **Light-mode donut:** the lightest green is 1.99:1 against white, just under the validator's 2:1 floor. Adding chart tokens to `globals.css` could fix it; I didn't change the design system without asking.
+- **Chart tokens:** added to `globals.css` with your approval; the light donut now passes every check.
+- **After editing `globals.css`, restart `npm run dev`.** The running dev server kept serving the old CSS (no new tokens) until restarted; a production build had them. Same lesson as the Prisma client: restart after changes to global setup.
+- **Temporary dev page removed** (`src/app/dev/import-check/`), with your approval.
 - **Not seen in the browser:** the empty state, because the test account has data. `buildDashboard([])` is tested.
