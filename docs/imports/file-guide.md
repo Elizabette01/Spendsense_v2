@@ -688,3 +688,16 @@ Solid arrows are calls and their answers, top to bottom in time order; the dashe
 | 320 px, light and dark | no sideways page scroll; transactions as cards; previous imports readable |
 
 Not seen: the Processing step, because a 12 KB file imports faster than a screenshot.
+
+## Transactions page redesign (after Phase 4, `.UI/transactions.png`)
+
+The `/transactions` page now follows the Transactions design.
+
+- **`src/features/transactions/filters.ts`** (pure, browser-safe; tests in `filters.test.ts`): `parseTransactionFilters(searchParams)` reads `q` (search, trimmed, max 100 characters), `category` (an id, or `review`), `month` (`YYYY-MM`), `type` (`in` / `out`) and `page` from the URL. URL values are untrusted: anything unknown or malformed is dropped, never passed to the database. `?review=1` (used by the import Done screen) still works and means `category=review`. Also `filtersHref(filters)` (builds a URL, leaving empty filters and page 1 out) and `pageList(current, count)` (the page numbers to show, with gaps).
+- **`queries.ts`** (changed): `getTransactions(filters)` also filters by search (merchant or description, case-insensitive), category or "review", calendar month and money in or out. Everything is still scoped to the user's id. New: `getTransactionMonths()` (the months that have transactions, newest first, for **Date range**) and `getTransactionCount()` (for the header pill).
+- **`transactions-toolbar.tsx`** (client): search plus **Category**, **Date range** and **Type** selects in one GET form (`next/form`). Filters live in the URL, so the back button and shared links work, and it works without JavaScript (a `noscript` Apply button). With JavaScript, changing a select applies it at once; search applies on Enter. Each control has a label (visually hidden, as in the design).
+- **`transactions-list.tsx`** (rewritten): header pills ("297 transactions"; "N need review" linking to the review filter), the toolbar, then rows as cards: a decorative category icon, merchant and bank description, the category pill, date, amount (money out red, money in green with "+") and "…". Uncategorised rows are tinted coral with an **Assign ▾** pill. On wide screens it's a real `<table>` (rows styled as cards, a hidden caption); on phones, a card list. Numbered pagination: "Showing 101–150 of 297", ← 1 2 **3** 4 … 6 →, with `aria-current="page"`. Empty states for "no transactions yet" and "no transactions match these filters" (with **Clear filters**).
+- **`category-control.tsx`** (changed): the trigger is now the design's pill. The row's "…" (with `menu`) opens the same dialog by clicking that row's visible pill; it's hidden from screen readers and the tab order because the pill already does the job.
+- **`src/app/(app)/transactions/page.tsx`**: parses the filters inside `<Suspense>` and passes them down; no subtitle (design).
+
+**Departures from the image:** money out is red (requested earlier); the second line of an uncategorised row is its bank description, because there's no "confidence" in the data; 50 rows per page (the image shows 5 as an example); **Date range** lists months with data, because statements are historical.
