@@ -76,6 +76,22 @@ const COPY: Record<string, FailureCopy> = {
   },
 };
 
-export function failureCopy(reason: string, message: string): FailureCopy {
+/** Statement-level failures that, after a column change, mean "that choice didn't work". */
+const COLUMN_PROBLEMS = new Set([
+  "not_a_statement",
+  "no_transactions",
+  "mostly_unreadable",
+  "conflicting_dates",
+  "no_date_column",
+  "no_amount_column",
+]);
+
+const COLUMN_CHOICE: FailureCopy = {
+  title: "That column choice didn't work",
+  body: "We couldn't read transactions with that choice, so your previous choices are kept. Try a different column.",
+};
+
+export function failureCopy(reason: string, message: string, fromRemap = false): FailureCopy {
+  if (fromRemap && COLUMN_PROBLEMS.has(reason)) return COLUMN_CHOICE;
   return COPY[reason] ?? { title: "Something went wrong", body: message };
 }

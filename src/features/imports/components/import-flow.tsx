@@ -24,7 +24,8 @@ import { ProcessingStep } from "./processing-step";
 import { Stepper } from "./stepper";
 import { UploadStep } from "./upload-step";
 
-type Failure = { reason: string; message: string };
+/** `fromRemap`: the failure came from changing a column or the date order. */
+type Failure = { reason: string; message: string; fromRemap?: boolean };
 
 type FlowState =
   | { step: "upload"; failure: Failure | null }
@@ -86,7 +87,8 @@ async function runFlow(state: FlowState, intent: Intent): Promise<FlowState> {
       const dateOrder = intent.dateOrder ?? state.dateOrder;
       const result = await previewStatement({ status: "idle" }, statementForm(state.file, mapping, dateOrder));
       if (result.status !== "ready") {
-        return { ...state, failure: result.status === "error" ? result : null };
+        // The previous preview and choices stay; only the pop-up explains
+        return { ...state, failure: result.status === "error" ? { ...result, fromRemap: true } : null };
       }
       return {
         ...state,
@@ -143,8 +145,9 @@ export function ImportFlow({ previousImports }: { previousImports: ReactNode }) 
   }, [view]);
 
   const failure = state.failure && state.failure !== dismissed ? state.failure : null;
-  const copy = failure ? failureCopy(failure.reason, failure.message) : null;
+  const copy = failure ? failureCopy(failure.reason, failure.message, failure.fromRemap) : null;
   const canRecheck = failure?.reason === "needs_decision" || failure?.reason === "conflict";
+  const keepEditing = failure?.fromRemap === true;
   const chooseButtonRef = useRef<HTMLButtonElement>(null);
 
   return (
@@ -204,10 +207,27 @@ export function ImportFlow({ previousImports }: { previousImports: ReactNode }) 
         initialFocusRef={chooseButtonRef}
         footer={
           <>
-            <Button variant="outline" onClick={() => setDismissed(state.failure)}>
-              Close
-            </Button>
-            {canRecheck ? (
+            {keepEditing ? (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setDismissed(state.failure);
+                    send({ type: "reset" });
+                  }}
+                >
+                  Choose another file
+                </Button>
+                <Button ref={chooseButtonRef} onClick={() => setDismissed(state.failure)}>
+                  Keep editing
+                </Button>
+              </>
+            ) : (
+              <Button variant="outline" onClick={() => setDismissed(state.failure)}>
+                Close
+              </Button>
+            )}
+            {keepEditing ? null : canRecheck ? (
               <Button
                 ref={chooseButtonRef}
                 onClick={() => {
