@@ -324,6 +324,7 @@ function SampleTable({ preview }: { preview: StatementPreview }) {
                     row.amountMinor > 0 ? "text-positive" : "text-heading"
                   }`}
                 >
+                  {row.amountMinor > 0 ? "+" : ""}
                   {formatMoney(row.amountMinor)}
                 </td>
               </tr>
