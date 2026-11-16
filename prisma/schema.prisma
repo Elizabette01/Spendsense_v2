@@ -55,6 +55,7 @@ enum StatementStatus {
 enum CategorisedBy {
   AI
   USER
+  RULE
 
   @@map("categorised_by")
 }
