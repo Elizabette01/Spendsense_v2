@@ -17,7 +17,7 @@ function axisPounds(minor: number): string {
 export function IncomeExpensesChart({ data }: { data: IncomeExpensesPoint[] }) {
   const ticks = niceTicks(Math.max(...data.flatMap((point) => [point.incomeMinor, point.expensesMinor])));
   return (
-    <div aria-hidden="true" className="h-60 w-full text-foreground-muted">
+    <div aria-hidden="true" className="h-60 w-full text-foreground-muted lg:h-80">
       <BarChart
         responsive
         style={{ width: "100%", height: "100%" }}
