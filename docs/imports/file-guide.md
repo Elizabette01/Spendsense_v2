@@ -1,6 +1,6 @@
 # SpendSense imports: file guide
 
-This guide maps the statement import backend: how an uploaded file becomes saved transactions, how duplicates are handled, and how a statement is listed and deleted. It covers the files added or changed in B8 Phase 1 (on `feat/import-actions`) and Phase 2 (built-in categorisation and recategorising, on `feat/categorisation`), written from reading the code as it is. The parsers in `src/features/imports/parsers/` were built earlier and aren't changed here; they're summarised in one short section so you know where they fit. "Used by" lists come from searching the codebase for imports. For the big picture first, jump to [How it all connects](#how-it-all-connects), then come back to the files.
+This guide maps the statement import backend: how an uploaded file becomes saved transactions, how duplicates are handled, and how a statement is listed and deleted. It covers the files added or changed in B8 Phase 1 (on `feat/import-actions`) Phase 2 (built-in categorisation and recategorising, on `feat/categorisation`) and Phase 3 (the `/imports` and `/transactions` screens, on `feat/imports-ui`), written from reading the code as it is. The parsers in `src/features/imports/parsers/` were built earlier and aren't changed here; they're summarised in one short section so you know where they fit. "Used by" lists come from searching the codebase for imports. For the big picture first, jump to [How it all connects](#how-it-all-connects), then come back to the files.
 
 Each entry uses the template from `docs/auth/file-guide.md`, plus a **Must never** line: the rules each file exists to protect.
 
@@ -27,6 +27,16 @@ Each entry uses the template from `docs/auth/file-guide.md`, plus a **Must never
 - [`src/lib/categorisation/categorise.ts`](#srclibcategorisationcategorisets)
 - [`src/features/transactions/queries.ts`](#srcfeaturestransactionsqueriests)
 - [`src/features/transactions/actions/recategorise.ts`](#srcfeaturestransactionsactionsrecategorisets)
+
+**Phase 3: imports UI and transactions page**
+- [`src/lib/format.ts`](#srclibformatts)
+- [`src/components/ui/badge.tsx`](#srccomponentsuibadgetsx)
+- [`src/features/imports/file-rules.ts`](#srcfeaturesimportsfile-rulests)
+- [The import flow](#the-import-flow-srcfeaturesimportscomponents)
+- [`previous-imports.tsx` and `statement-actions.tsx`](#previous-importstsx-and-statement-actionstsx)
+- [`src/app/(app)/imports/page.tsx`](#srcappappimportspagetsx)
+- [Transactions components and page](#srcfeaturestransactionscomponents-and-srcappapptransactionspagetsx)
+- [Landing page wording](#landing-page-wording)
 
 **Tests**
 - [The four new test files](#the-four-new-test-files)
@@ -369,6 +379,92 @@ ALTER TABLE "merchant_rules" ADD CONSTRAINT "merchant_rules_category_id_fkey" FO
 
 **Must never:** change another user's rows, or accept a category the user can't see.
 
+## Phase 3: imports UI and transactions page
+
+All UI. The pages stay thin server components; anything that reads the session sits inside `<Suspense>` after `await connection()`; interactive parts are client components.
+
+### `src/lib/format.ts`
+
+**What it does:** Display formatting, used only at the edge: money is stored as integer pence and dates as calendar days.
+
+**Runs on:** both (pure, browser-safe).
+
+**Exports:**
+- `formatMoney(pence)` → `"£1,234.56"` / `"-£12.50"`; `formatMoneyAbs(pence)` → no sign (for "money in" / "money out" totals).
+- `formatDay(date)` → `"11 Apr 2026"`; `formatMonthYear(date)` → `"April 2026"`; `formatPeriod(start, end)` → `"April 2026"`, `"May to October 2026"` or `"December 2025 to January 2026"`.
+- `plural(count, word)` → `"1 transaction"`, `"1,420 transactions"`.
+
+**Used by:** the imports components, the transactions list; the dashboard later. It's in `src/lib/` because more than one feature uses it.
+
+**Why UTC:** a statement date is a calendar day. Read in local time, "2026-04-01" could show as 31 March for someone west of UTC. Every formatter reads dates as UTC.
+
+**Must never:** be used to do maths on money; it only formats.
+
+### `src/components/ui/badge.tsx`
+
+**What it does:** The small status pill ("Complete", "Needs review", "Matched", "Please check").
+
+**Runs on:** both (server component, no state).
+
+**Exports:** `Badge({ tone, icon, children })`, with tones `success` (accent), `warning` (coral-light with coral-strong text), `error` (destructive outline) and `neutral`.
+
+**Accessibility:** every pair meets WCAG AA for small text. The icon is decorative (`aria-hidden`); the word carries the meaning, so colour is never the only signal.
+
+### `src/features/imports/file-rules.ts`
+
+**What it does:** The upload checks the browser does before sending a file: extension (`.csv`, `.xlsx`, `.xls`, `.pdf`), empty, and the 4 MB limit.
+
+**Runs on:** browser (plain module).
+
+**Exports:** `MAX_UPLOAD_BYTES`, `ACCEPTED_EXTENSIONS`, `ACCEPT_ATTRIBUTE` (for `<input accept>`), `checkUpload(file)` → `"wrong_file_type" | "empty" | "too_large" | null`.
+
+**Why it exists:** a request bigger than the Server Actions body limit (4.5 MB in `next.config.ts`) is rejected before the action runs, so the action can't explain it. The browser must. The server still checks everything again.
+
+**Tests:** `file-rules.test.ts` checks the browser limit equals the server's `MAX_FILE_BYTES`, so they can't drift apart.
+
+### The import flow (`src/features/imports/components/`)
+
+**`import-flow.tsx`** (client) is the whole `/imports` screen: Upload → Map columns → Processing → Done.
+- It holds the chosen `File` in memory. The server keeps nothing between preview and import, so the same file is sent again with the final choices.
+- Its state is a small state machine run through `useActionState(runFlow, START)`. Each user action is an *intent* (`choose`, `remap`, `import`, `reset`); `runFlow` calls the right server action and returns the next state. There's no `useEffect` copying results into state, so a result can never be applied twice or late.
+- "Processing" isn't stored: it's shown while the `import` intent is pending.
+- `mapping` and `dateOrder` are only sent once the user changes them, so a bank's built-in profile (which can carry extra handling) is used until then.
+- Focus moves to the page heading when the step changes, for screen reader and keyboard users.
+- The failure pop-up uses the shared `Dialog`. Its wording comes from `failure-copy.ts`; a failure after a column change gets "That column choice didn't work" and **Keep editing**, because the previous choices are kept.
+
+**`stepper.tsx`**: the four-step progress row. An ordered list; the current step has `aria-current="step"`; finished steps have a visually hidden "(completed)".
+
+**`upload-step.tsx`**: drop zone plus **Browse files**. The real `<input type="file">` is visually hidden and out of the tab order; keyboard users use the button. Text reads "CSV, Excel or PDF · Max 4 MB".
+
+**`map-step.tsx`**: step 2. The file bar ("Change file"), the summary (bank, transactions, dates, money in and out, zero rows skipped), the column table (`Read as` select with Date, Description, Amount, Money in, Money out, Balance, Transaction ID, Skip; "Hidden for privacy" for sensitive columns; uncertain roles highlighted in coral with "Please check"), the date-order choice when it's uncertain, the 20-row sample, rows that couldn't be read, and the duplicates section. **Confirm mapping** stays disabled, with the reason shown and linked by `aria-describedby`, until the missing column is chosen and every flagged row has a choice. Changing a select calls `previewStatement` again with the new mapping. PDFs have no column table.
+
+**`duplicates-section.tsx`**: the flagged rows. Rows matched by the bank's transaction ID start as **Skip**; rows matched by date, amount and description start **undecided** (two identical coffees can both be real). **Skip all** / **Import all**, plus a Skip/Import radio pair per row (each in a `fieldset` with a visually hidden `legend` naming the row). Every choice is sent as an explicit per-row override.
+
+**`processing-step.tsx`**: step 3. Four stages; "Reading rows" and "Normalising data" are ticked because they finished with the preview; the rest show as in progress with an indeterminate bar (`role="progressbar"` with no value). No invented percentages or counts. Animations only run when the user hasn't asked for reduced motion.
+
+**`done-step.tsx`**: step 4. "Your {period} statement is ready", the three figures, a line for skipped duplicates, zero-amount rows and unreadable rows when any are above zero, the review banner only when `needsReviewCount > 0`, and **Go to dashboard** / **Review transactions** (`/transactions?review=1`).
+
+**`failure-copy.ts`**: plain-English title and body for every failure `reason`, falling back to the server's message.
+
+### `previous-imports.tsx` and `statement-actions.tsx`
+
+- **`previous-imports.tsx`** (server component, inside `<Suspense>`, `await connection()` first): "Previous imports" from `getStatements()`: file name, import date, transaction count, status badge.
+- **`statement-actions.tsx`** (client): the "…" menu (a disclosure button with `aria-expanded`; Escape and outside clicks close it; focus moves to **Delete**) and the confirm dialog: "This removes {file} and its N transactions. This can't be undone." Focus starts on **Cancel**. Uses `useActionState(deleteStatement)`. After a delete, focus moves to the "Previous imports" heading, because the row that opened the dialog is gone.
+
+### `src/app/(app)/imports/page.tsx`
+
+Thin: renders `ImportFlow`, passing the `PreviousImports` list (in `<Suspense>` with a skeleton) as a prop. The list is shown on the upload step.
+
+### `src/features/transactions/components/` and `src/app/(app)/transactions/page.tsx`
+
+- **`transactions-list.tsx`** (server component): the **All transactions** / **Needs review (N)** filter links (`aria-current="page"` on the active one), then the transactions, then pagination (**Previous** / **Next** links that keep the filter). On phones each transaction is a card (merchant and amount, description, date and category) so the category and amount stay in view; from the `sm` breakpoint up it's a table with a visually hidden caption. Money in is green with a "+", so colour isn't the only signal. Empty states for "no transactions yet" (with a link to `/imports`) and "nothing needs review".
+- **`category-control.tsx`** (client): the category cell. Shows the category name, or a **Needs review** badge, as a button whose label says what it does ("Change category for Tesco Stores, currently Groceries"). It opens a dialog: a grouped category select (Spending, Income, Transfers and savings), and a checkbox, ticked by default, "Also apply to other transactions from {merchant} and remember for future imports". It submits `recategoriseTransaction` with `useActionState`. If the saved row leaves the list (the "Needs review" filter), focus moves to the page heading instead of being lost.
+- **The page** reads `searchParams` inside `<Suspense>`; only `review=1` and a string `page` are used; everything else falls back to all rows on page 1.
+
+### Landing page wording
+
+`features.tsx` and `how-it-works.tsx` now say "CSV, Excel and PDF".
+
 ## Tests
 
 ### The four new test files
@@ -514,6 +610,24 @@ flowchart LR
     AI -.-> N[null: needs review]
 ```
 
+### The import screen as a state machine (Phase 3)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Upload
+    Upload --> Upload: choose file fails (browser check or previewStatement error) / pop-up
+    Upload --> Map: choose file, previewStatement ready
+    Map --> Map: change column or date order (previewStatement again)
+    Map --> Upload: Back / Change file
+    Map --> Processing: Confirm mapping (importStatement pending)
+    Processing --> Done: importStatement done
+    Processing --> Map: importStatement error / pop-up
+    Done --> Upload: Upload statement
+    Done --> [*]: Go to dashboard / Review transactions
+```
+
+Every arrow is one *intent* passed to `runFlow` through `useActionState`. "Processing" is not a stored state: it is the Map state while the import intent is pending.
+
 ### Reading the diagrams
 
 Solid arrows are calls and their answers, top to bottom in time order; the dashed arrow at the end is work that runs after the response has already gone back. `alt` boxes show the two possible outcomes of one step. The key idea in the first diagram is that the browser crosses the network twice with the same file: the server keeps nothing in between, so every check runs again on the second trip.
@@ -555,3 +669,22 @@ Solid arrows are calls and their answers, top to bottom in time order; the dashe
 | Server log | no errors, nothing about rows logged |
 
 **Gotcha found:** after a schema change and `prisma generate`, a dev server that was already running keeps its old Prisma client (`src/lib/db.ts` stores it on `globalThis` so hot reloads reuse it). New models such as `db.merchantRule` are missing until the dev server is restarted; the action fails with `TypeError`. Restart `npm run dev` after every migration.
+
+## Manual check, Phase 3 (16 Nov 2026, `/imports` and `/transactions` in the browser)
+
+| Check | Result |
+|---|---|
+| Upload the demo CSV (already imported) | step 2 with summary, column table, sample; all 297 rows flagged, undecided; **Confirm mapping** disabled with the reason shown |
+| **Skip all** → Confirm | "Nothing new to import" pop-up; focus starts on its main button; Escape closes it |
+| **Import all** → Confirm | Done: 297 / 296 categorised / 1 needs review, review banner, both buttons; Previous imports refreshed by itself |
+| "…" → Delete | menu focuses Delete; dialog focuses **Cancel**; deleting removes the row and moves focus to the list heading |
+| `.txt`, 5 MB CSV, empty CSV | pop-ups from the browser check ("That file type isn't supported", "That file is too large", "That file is empty"); the 5 MB file never reached the server |
+| USD statement | "Only pounds sterling for now" |
+| CSV with no amount column | still previews, with the "We couldn't find the amount" alert and the date-order choice |
+| Choosing a column that makes no transactions | "That column choice didn't work", **Keep editing**; previous choices kept |
+| Synthetic Barclays PDF | step 2 with no column table, the PDF note, 4 sample rows |
+| `/transactions?review=1` → recategorise | dialog focuses the select, checkbox ticked by default; after saving the list shows "Nothing needs review" and focus moves to the page heading |
+| `/transactions?page=2` | 50 rows, "Page 2 of 6", Previous and Next keep the filter |
+| 320 px, light and dark | no sideways page scroll; transactions as cards; previous imports readable |
+
+Not seen: the Processing step, because a 12 KB file imports faster than a screenshot.
