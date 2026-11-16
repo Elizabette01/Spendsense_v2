@@ -92,7 +92,7 @@ export function MapStep({ file, preview, pending, onRemap, onBack, onConfirm }: 
       </div>
 
       {/* Summary */}
-      <section aria-label="Statement summary" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <section aria-label="Statement summary" className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
         <Fact label="Bank" value={preview.bankName ?? "Not recognised"} />
         <Fact label="Transactions" value={summary.rowCount.toLocaleString("en-GB")} />
         <Fact

@@ -201,7 +201,6 @@ export function ImportFlow({ previousImports }: { previousImports: ReactNode }) 
         open={copy !== null}
         onClose={() => setDismissed(state.failure)}
         title={copy?.title ?? ""}
-        description={copy?.body}
         initialFocusRef={chooseButtonRef}
         footer={
           <>
@@ -232,7 +231,9 @@ export function ImportFlow({ previousImports }: { previousImports: ReactNode }) 
             )}
           </>
         }
-      />
+      >
+        <p className="text-body text-foreground-secondary">{copy?.body}</p>
+      </Dialog>
     </div>
   );
 }

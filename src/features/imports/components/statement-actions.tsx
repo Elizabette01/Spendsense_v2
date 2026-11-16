@@ -102,9 +102,12 @@ function DeleteStatementDialog({
   const cancelRef = useRef<HTMLButtonElement>(null);
   const formId = useId();
 
-  // Deleted: the list refreshes on the server; close this dialog
+  // Deleted: the list refreshes on the server. Close, and put focus on the list
+  // heading, because the row that opened this dialog is gone.
   useEffect(() => {
-    if (state.status === "done") onClose();
+    if (state.status !== "done") return;
+    onClose();
+    document.getElementById("previous-imports")?.focus();
   }, [state, onClose]);
 
   return (
@@ -112,12 +115,6 @@ function DeleteStatementDialog({
       open={open}
       onClose={onClose}
       title="Delete this statement?"
-      description={
-        <>
-          This removes <span className="font-semibold text-foreground">{fileName}</span> and its{" "}
-          {plural(transactionCount, "transaction")}. This can&apos;t be undone.
-        </>
-      }
       initialFocusRef={cancelRef}
       footer={
         <>
@@ -130,7 +127,11 @@ function DeleteStatementDialog({
         </>
       }
     >
-      <form id={formId} action={action}>
+      <form id={formId} action={action} className="flex flex-col gap-3">
+        <p className="text-body text-foreground-secondary">
+          This removes <span className="font-semibold text-foreground">{fileName}</span> and its{" "}
+          {plural(transactionCount, "transaction")}. This can&apos;t be undone.
+        </p>
         <input type="hidden" name="statementId" value={statementId} />
         {state.status === "error" && <FormAlert tone="error">{state.message}</FormAlert>}
       </form>

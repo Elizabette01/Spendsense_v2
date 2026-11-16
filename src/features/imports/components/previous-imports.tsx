@@ -19,7 +19,7 @@ export async function PreviousImports() {
 
   return (
     <section aria-labelledby="previous-imports" className="flex flex-col gap-3">
-      <h2 id="previous-imports" className="text-card-title text-heading">
+      <h2 id="previous-imports" tabIndex={-1} className="text-card-title text-heading focus:outline-none">
         Previous imports
       </h2>
       {statements.length === 0 ? (
