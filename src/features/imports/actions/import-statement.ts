@@ -5,6 +5,7 @@ import { after } from "next/server";
 
 import { auth } from "@/auth";
 import { Prisma } from "@/generated/prisma/client";
+import { categoriseRows } from "@/lib/categorisation/categorise";
 import { db } from "@/lib/db";
 import { LIMITS, rateLimit } from "@/lib/rate-limit";
 
@@ -40,9 +41,9 @@ export type ImportResult = {
   skippedCount: number;
   /** Rows that couldn't be read. */
   issueCount: number;
-  /** Filled in Phase 2 (0 until then). */
+  /** Rows given a category by the user's rules or the built-in rules. */
   categorisedCount: number;
-  /** Filled in Phase 2 (= importedCount until then). */
+  /** Rows with no category yet. */
   needsReviewCount: number;
   /** ISO date (YYYY-MM-DD). */
   periodStart: string | null;
@@ -193,6 +194,14 @@ export async function importStatement(
 
     const skippedCount = read.analysis.normalised.skippedZero;
 
+    // Categorise: the user's merchant rules (loaded once), then built-in rules
+    const userRules = await db.merchantRule.findMany({
+      where: { userId },
+      select: { merchantKey: true, categoryId: true },
+    });
+    const categories = categoriseRows(finalRows, userRules);
+    const categorisedCount = categories.filter((c) => c.categoryId !== null).length;
+
     // 9. Save the statement and its transactions together: all or nothing
     const statementId = await db.$transaction(
       async (tx) => {
@@ -214,14 +223,20 @@ export async function importStatement(
 
         for (let start = 0; start < finalRows.length; start += INSERT_CHUNK) {
           await tx.transaction.createMany({
-            data: finalRows.slice(start, start + INSERT_CHUNK).map((row) => ({
-              userId,
-              statementId: statement.id,
-              date: isoDateToUtcDate(row.date),
-              description: row.description,
-              amountMinor: row.amountMinor,
-              fingerprint: row.fingerprint,
-            })),
+            data: finalRows.slice(start, start + INSERT_CHUNK).map((row, offset) => {
+              const category = categories[start + offset];
+              return {
+                userId,
+                statementId: statement.id,
+                date: isoDateToUtcDate(row.date),
+                description: row.description,
+                merchant: category.merchant,
+                amountMinor: row.amountMinor,
+                categoryId: category.categoryId,
+                categorisedBy: category.categorisedBy,
+                fingerprint: row.fingerprint,
+              };
+            }),
           });
         }
 
@@ -257,8 +272,8 @@ export async function importStatement(
         duplicateCount,
         skippedCount,
         issueCount: read.analysis.normalised.issues.length,
-        categorisedCount: 0,
-        needsReviewCount: finalRows.length,
+        categorisedCount,
+        needsReviewCount: finalRows.length - categorisedCount,
         periodStart,
         periodEnd,
       },

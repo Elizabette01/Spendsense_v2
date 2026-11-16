@@ -11,7 +11,10 @@ type SavedTransaction = {
   statementId: string;
   date: Date;
   description: string;
+  merchant: string;
   amountMinor: number;
+  categoryId: string | null;
+  categorisedBy: string | null;
   fingerprint: string;
 };
 
@@ -29,6 +32,8 @@ const fake = vi.hoisted(() => ({
   activity: [] as { type: string; userId: string }[],
   afterCallbacks: [] as (() => Promise<void>)[],
   revalidated: [] as string[],
+  merchantRules: [] as { userId: string; merchantKey: string; categoryId: string }[],
+  merchantRuleQueries: 0,
 }));
 
 vi.mock("server-only", () => ({}));
@@ -70,6 +75,14 @@ vi.mock("@/lib/db", () => {
   return {
     db: {
       transaction: { findMany },
+      merchantRule: {
+        findMany: async ({ where }: { where: { userId: string } }) => {
+          fake.merchantRuleQueries += 1;
+          return fake.merchantRules
+            .filter((rule) => rule.userId === where.userId)
+            .map(({ merchantKey, categoryId }) => ({ merchantKey, categoryId }));
+        },
+      },
       activityEvent: {
         create: async ({ data }: { data: { type: string; userId: string } }) => {
           fake.activity.push(data);
@@ -126,6 +139,12 @@ const ROWS: NormalisedRow[] = [
   { rowNumber: 4, date: "2026-03-05", amountMinor: -320, description: "TEST CAFE", externalId: null },
 ];
 const FINGERPRINTS = addFingerprints(ROWS, null).map((row) => row.fingerprint);
+/** What the built-in rules decide for ROWS. */
+const CATEGORIES = [
+  { merchant: "Fake Grocer", categoryId: null, categorisedBy: null }, // no rule: needs review
+  { merchant: "Example Payroll", categoryId: "sys_salary", categorisedBy: "RULE" },
+  { merchant: "Test Cafe", categoryId: "sys_eating_out", categorisedBy: "RULE" },
+];
 
 const IDLE: ImportState = { status: "idle" };
 const NO_DUPLICATES = JSON.stringify({ overrides: {} });
@@ -161,6 +180,8 @@ beforeEach(() => {
   fake.activity.length = 0;
   fake.afterCallbacks.length = 0;
   fake.revalidated.length = 0;
+  fake.merchantRules.length = 0;
+  fake.merchantRuleQueries = 0;
 });
 
 function expectNothingSaved() {
@@ -249,8 +270,8 @@ describe("importStatement: saving", () => {
         duplicateCount: 0,
         skippedCount: 1,
         issueCount: 0,
-        categorisedCount: 0,
-        needsReviewCount: 3,
+        categorisedCount: 2,
+        needsReviewCount: 1,
         periodStart: "2026-03-01",
         periodEnd: "2026-03-05",
       },
@@ -277,7 +298,10 @@ describe("importStatement: saving", () => {
         statementId: "stmt-1",
         date: new Date(`${row.date}T00:00:00.000Z`),
         description: row.description,
+        merchant: CATEGORIES[index].merchant,
         amountMinor: row.amountMinor,
+        categoryId: CATEGORIES[index].categoryId,
+        categorisedBy: CATEGORIES[index].categorisedBy,
         fingerprint: FINGERPRINTS[index],
       })),
     );
@@ -308,6 +332,46 @@ describe("importStatement: saving", () => {
     expect(fake.activity).toEqual([]); // only after the response
     for (const callback of fake.afterCallbacks) await callback();
     expect(fake.activity).toEqual([{ type: "STATEMENT_IMPORT", userId: "user-1" }]);
+  });
+});
+
+describe("importStatement: categorising", () => {
+  it("applies this user's merchant rules before built-in rules, loading them once", async () => {
+    fake.merchantRules.push(
+      { userId: "user-1", merchantKey: "fake grocer", categoryId: "sys_groceries" },
+      { userId: "user-1", merchantKey: "test cafe", categoryId: "cat_my_treats" },
+      { userId: "someone-else", merchantKey: "example payroll", categoryId: "sys_gifts" },
+    );
+
+    const state = await importStatement(IDLE, importForm());
+
+    expect(state).toMatchObject({
+      status: "done",
+      result: { importedCount: 3, categorisedCount: 3, needsReviewCount: 0 },
+    });
+    expect(fake.merchantRuleQueries).toBe(1);
+    expect(
+      fake.transactions.map(({ categoryId, categorisedBy }) => [categoryId, categorisedBy]),
+    ).toEqual([
+      ["sys_groceries", "USER"],
+      ["sys_salary", "RULE"], // another user's rule is never used
+      ["cat_my_treats", "USER"],
+    ]);
+  });
+
+  it("keeps categories lined up with rows across insert chunks", async () => {
+    const lines = [HEADER];
+    for (let i = 0; i < 1_500; i++) {
+      const description = i % 2 ? "NETFLIX.COM" : `MYSTERY ${i}`;
+      lines.push(`01/03/2026,${description},-1.00`);
+    }
+    await importStatement(IDLE, importForm(undefined, csvFile(lines.join("\n"))));
+
+    expect(fake.transactions).toHaveLength(1_500);
+    for (const row of fake.transactions) {
+      const expected = row.description === "NETFLIX.COM" ? "sys_subscriptions" : null;
+      expect(row.categoryId).toBe(expected);
+    }
   });
 });
 
