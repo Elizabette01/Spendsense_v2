@@ -57,6 +57,18 @@
   --accent-foreground: #1a7a4c;
   --positive: #1a7a4c;
   --destructive: #c0392b;
+
+  /* Charts: checked with the dataviz palette validator against --card.
+     Income/expenses pass as a pair; the breakdown ramp is ordered darkest =
+     biggest, and its lightest step (#66ba8a, not brand-300) clears 2:1 on white. */
+  --chart-income: #1a7a4c;
+  --chart-expenses: #d4764e;
+  --chart-rank-1: #0d4a2e;
+  --chart-rank-2: #1a7a4c;
+  --chart-rank-3: #48a872;
+  --chart-rank-4: #66ba8a;
+  --chart-other: #8c8c8c;
+  --chart-review: #d4764e;
 }
 
 /* ---------- Semantic colours: dark ---------- */
@@ -80,6 +92,17 @@
   --accent-foreground: #7bc89a;
   --positive: #7bc89a;
   --destructive: #f08a7e;
+
+  /* Charts on the dark card: brand-400 + coral-strong (coral-strong is just
+     under 3:1, so chart tables are shown); the ramp is lightest = biggest. */
+  --chart-income: #48a872;
+  --chart-expenses: #a8502c;
+  --chart-rank-1: #b8e0c8;
+  --chart-rank-2: #7bc89a;
+  --chart-rank-3: #48a872;
+  --chart-rank-4: #2d8659;
+  --chart-other: #7d8682;
+  --chart-review: #d4764e;
 }
 
 /* ---------- Expose semantic colours + font to Tailwind ---------- */
@@ -100,6 +123,14 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-positive: var(--positive);
   --color-destructive: var(--destructive);
+  --color-chart-income: var(--chart-income);
+  --color-chart-expenses: var(--chart-expenses);
+  --color-chart-rank-1: var(--chart-rank-1);
+  --color-chart-rank-2: var(--chart-rank-2);
+  --color-chart-rank-3: var(--chart-rank-3);
+  --color-chart-rank-4: var(--chart-rank-4);
+  --color-chart-other: var(--chart-other);
+  --color-chart-review: var(--chart-review);
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 }

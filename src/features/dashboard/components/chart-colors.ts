@@ -1,15 +1,22 @@
 /*
- * Chart colours as Tailwind classes on design tokens, applied with `currentColor`
- * so dark mode can choose its own step. A plain module (not "use client"), so
- * both server components (legends) and client components (charts) can import it.
- *
- * Checked with the dataviz palette validator:
- *   light: brand-600 + coral on the white card: pass (with legend and bar gap)
- *   dark:  brand-400 + coral-strong on the dark card: pass; coral-strong is just
- *          under 3:1, so the visible table view is required, not optional.
+ * Chart colours: Tailwind classes on the chart tokens in globals.css
+ * (--chart-*), applied with `currentColor`. Each token has its own light and
+ * dark value, checked with the dataviz palette validator; see globals.css.
+ * A plain module (not "use client"), so server components (legends) and
+ * client components (charts) can both import it.
  */
-export const INCOME_CLASS = "text-brand-600 dark:text-brand-400";
-export const EXPENSES_CLASS = "text-coral dark:text-coral-strong";
+export const INCOME_CLASS = "text-chart-income";
+export const EXPENSES_CLASS = "text-chart-expenses";
+
+/** Breakdown slices, biggest category first. */
+export const RANK_CLASSES = [
+  "text-chart-rank-1",
+  "text-chart-rank-2",
+  "text-chart-rank-3",
+  "text-chart-rank-4",
+] as const;
+export const OTHER_CLASS = "text-chart-other";
+export const REVIEW_CLASS = "text-chart-review";
 
 /** Round axis steps (1, 2, 2.5 or 5 × a power of ten), from 0 up past `max`. */
 export function niceTicks(max: number, count = 4): number[] {

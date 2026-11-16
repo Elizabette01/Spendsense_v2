@@ -4,7 +4,13 @@ import { monthStart } from "@/lib/finance/months";
 import { formatMoney } from "@/lib/format";
 
 import type { BreakdownSlice, MonthBars } from "../build";
-import { EXPENSES_CLASS, INCOME_CLASS } from "./chart-colors";
+import {
+  EXPENSES_CLASS,
+  INCOME_CLASS,
+  OTHER_CLASS,
+  RANK_CLASSES,
+  REVIEW_CLASS,
+} from "./chart-colors";
 import { IncomeExpensesChart } from "./income-expenses-chart";
 import { SectionCard, TableView } from "./section-card";
 import { SpendingDonut } from "./spending-donut";
@@ -62,23 +68,15 @@ export function IncomeExpensesSection({ months }: { months: MonthBars[] }) {
 }
 
 /*
- * Slice colours. The top four are ranked largest first, so they're a one-hue
- * ramp (darker = bigger in light mode, lighter = bigger in dark mode), checked
- * with the dataviz validator. "Other" is grey and "Needs review" is coral, so
- * neither reads as a category. Every slice is also named, valued and listed in
- * the legend and table: colour is never the only way to tell them apart.
+ * Slice colours. The top four are ranked largest first, so they use the ordered
+ * chart-rank ramp. "Other" is grey and "Needs review" coral, so neither reads as
+ * a category. Every slice is also named, valued and listed in the legend and
+ * table: colour is never the only way to tell them apart.
  */
-const RAMP = [
-  "text-brand-800 dark:text-brand-200",
-  "text-brand-600 dark:text-brand-300",
-  "text-brand-400 dark:text-brand-400",
-  "text-brand-300 dark:text-brand-500",
-];
-
 function sliceClass(slice: BreakdownSlice, index: number): string {
-  if (slice.kind === "other") return "text-foreground-subtle";
-  if (slice.kind === "review") return "text-coral";
-  return RAMP[index] ?? RAMP[RAMP.length - 1];
+  if (slice.kind === "other") return OTHER_CLASS;
+  if (slice.kind === "review") return REVIEW_CLASS;
+  return RANK_CLASSES[index] ?? RANK_CLASSES[RANK_CLASSES.length - 1];
 }
 
 export function SpendingBreakdownSection({
