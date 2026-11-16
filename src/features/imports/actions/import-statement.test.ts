@@ -195,17 +195,16 @@ describe("importStatement: checks before reading", () => {
   });
 
   it.each([
-    ["missing decisions", { file: "csv" }],
-    ["decisions that aren't JSON", { file: "csv", decisions: "{nope" }],
-    ["an unknown choice", { file: "csv", decisions: '{"defaultChoice":"maybe"}' }],
+    ["missing decisions", {}],
+    ["decisions that aren't JSON", { decisions: "{nope" }],
+    ["an unknown choice", { decisions: '{"defaultChoice":"maybe"}' }],
     [
       "an override for something that isn't a fingerprint",
-      { file: "csv", decisions: '{"overrides":{"abc":"skip"}}' },
+      { decisions: '{"overrides":{"abc":"skip"}}' },
     ],
-    ["a bad mapping", { file: "csv", decisions: NO_DUPLICATES, mapping: "[1]" }],
-  ])("rejects %s", async (_label, fields) => {
-    const { file: _file, ...rest } = fields as Record<string, string>;
-    const state = await importStatement(IDLE, form({ file: csvFile(), ...rest }));
+    ["a bad mapping", { decisions: NO_DUPLICATES, mapping: "[1]" }],
+  ])("rejects %s", async (_label, fields: Record<string, string>) => {
+    const state = await importStatement(IDLE, form({ file: csvFile(), ...fields }));
     expect(state).toMatchObject({ status: "error", reason: "invalid_input" });
     expectNothingSaved();
   });
