@@ -53,7 +53,7 @@ export async function TransactionsList({ page, review }: Props) {
                   <div className="flex items-start justify-between gap-3">
                     <p className="min-w-0 text-body font-medium break-words text-foreground">{merchant}</p>
                     <p
-                      className={`shrink-0 text-body font-semibold ${moneyIn ? "text-positive" : "text-heading"}`}
+                      className={`shrink-0 text-body font-semibold ${moneyIn ? "text-positive" : "text-destructive"}`}
                     >
                       {moneyIn ? "+" : ""}
                       {formatMoney(transaction.amountMinor)}
@@ -112,7 +112,7 @@ export async function TransactionsList({ page, review }: Props) {
                       </td>
                       <td
                         className={`px-4 py-3 text-right align-top text-body font-semibold whitespace-nowrap sm:px-6 ${
-                          moneyIn ? "text-positive" : "text-heading"
+                          moneyIn ? "text-positive" : "text-destructive"
                         }`}
                       >
                         {moneyIn ? "+" : ""}
