@@ -543,3 +543,15 @@ Solid arrows are calls and their answers, top to bottom in time order; the dashe
 | Delete the second copy | statement and its 297 transactions gone (cascade); first copy untouched |
 | Small synthetic Barclays PDF | **`pdf-parse` loaded fine under Turbopack.** Preview `ready` (Barclays, 4 rows, no columns); import `done` |
 | Server log | no descriptions, amounts or file contents logged |
+
+## Manual check, Phase 2 (16 Nov 2026, real Postgres through `/dev/import-check`)
+
+| Check | Result |
+|---|---|
+| Import `synthetic-statement.csv` | `done`: 297 imported, **296 categorised, 1 needs review** ("TRANSFER FROM J DOE"); every row has a merchant (40 distinct); every category marked `RULE` |
+| Recategorise one Costa Coffee row to Expenses, "apply to merchant" ticked | `done`, `updatedCount: 6`: all 6 Costa rows `sys_expenses` / `USER`; rule `costa coffee → sys_expenses` saved |
+| Import the file again ("import all") | the new copy's Costa rows used the rule (`sys_expenses` / `USER`), not the built-in Eating Out |
+| Recategorise back to Eating Out | the same rule updated (`upsert`), no second rule |
+| Server log | no errors, nothing about rows logged |
+
+**Gotcha found:** after a schema change and `prisma generate`, a dev server that was already running keeps its old Prisma client (`src/lib/db.ts` stores it on `globalThis` so hot reloads reuse it). New models such as `db.merchantRule` are missing until the dev server is restarted; the action fails with `TypeError`. Restart `npm run dev` after every migration.
