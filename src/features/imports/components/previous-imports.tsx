@@ -35,7 +35,7 @@ export async function PreviousImports() {
                 key={statement.id}
                 className="flex items-center gap-3 rounded-card border border-border bg-card px-4 py-3"
               >
-                <span aria-hidden="true" className="text-foreground-subtle">
+                <span aria-hidden="true" className="hidden text-foreground-subtle sm:inline">
                   ▤
                 </span>
                 <div className="min-w-0 flex-1">
@@ -44,8 +44,13 @@ export async function PreviousImports() {
                     Imported {formatDay(statement.createdAt)} <span aria-hidden="true">·</span>{" "}
                     {plural(statement.importedCount, "transaction")}
                   </p>
+                  <div className="mt-1.5 sm:hidden">
+                    <Badge tone={status.tone}>{status.label}</Badge>
+                  </div>
                 </div>
-                <Badge tone={status.tone}>{status.label}</Badge>
+                <div className="hidden sm:block">
+                  <Badge tone={status.tone}>{status.label}</Badge>
+                </div>
                 <StatementActions
                   statementId={statement.id}
                   fileName={statement.fileName}
