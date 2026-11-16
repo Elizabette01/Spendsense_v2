@@ -15,6 +15,9 @@ export const LIMITS = {
   deleteAccountUser: { limit: 5, windowSeconds: 15 * 60 },
   resendReactivationEmail: { limit: 3, windowSeconds: 60 * 60 },
   resendReactivationIp: { limit: 10, windowSeconds: 60 * 60 },
+  previewStatementUser: { limit: 30, windowSeconds: 60 * 60 },
+  importStatementUser: { limit: 10, windowSeconds: 60 * 60 },
+  deleteStatementUser: { limit: 20, windowSeconds: 60 * 60 },
 } as const;
 
 type RateLimitResult = {
