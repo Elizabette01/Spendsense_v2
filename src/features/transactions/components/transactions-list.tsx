@@ -40,7 +40,42 @@ export async function TransactionsList({ page, review }: Props) {
         <EmptyState review={review} />
       ) : (
         <>
-          <div className="overflow-x-auto rounded-card bg-card shadow-card">
+          {/* Phones: one card per transaction, so category and amount stay in view */}
+          <ul
+            aria-label={review ? "Transactions that need a category" : "Your transactions"}
+            className="flex flex-col divide-y divide-divider rounded-card bg-card shadow-card sm:hidden"
+          >
+            {result.transactions.map((transaction) => {
+              const merchant = transaction.merchant ?? transaction.description;
+              const moneyIn = transaction.amountMinor > 0;
+              return (
+                <li key={transaction.id} className="flex flex-col gap-1 px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="min-w-0 text-body font-medium break-words text-foreground">{merchant}</p>
+                    <p
+                      className={`shrink-0 text-body font-semibold ${moneyIn ? "text-positive" : "text-heading"}`}
+                    >
+                      {moneyIn ? "+" : ""}
+                      {formatMoney(transaction.amountMinor)}
+                    </p>
+                  </div>
+                  <p className="text-label break-words text-foreground-muted">{transaction.description}</p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-label text-foreground-secondary">{formatDay(transaction.date)}</p>
+                    <CategoryControl
+                      transactionId={transaction.id}
+                      merchant={merchant}
+                      category={transaction.category}
+                      categories={categories}
+                    />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* Wider screens: the table */}
+          <div className="hidden overflow-x-auto rounded-card bg-card shadow-card sm:block">
             <table className="w-full min-w-150 text-left">
               <caption className="sr-only">
                 {review ? "Transactions that need a category" : "Your transactions"}, newest first.
