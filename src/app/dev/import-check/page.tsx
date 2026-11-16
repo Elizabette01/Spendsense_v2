@@ -7,7 +7,11 @@ import { Suspense } from "react";
 
 import { getStatements } from "@/features/imports/queries";
 
-import { DevDeleteButton, DevImportForm } from "./_components/dev-import-form";
+import {
+  DevDeleteButton,
+  DevImportForm,
+  DevRecategoriseForm,
+} from "./_components/dev-import-form";
 
 export default function ImportCheckPage() {
   if (process.env.NODE_ENV === "production") notFound();
@@ -16,6 +20,12 @@ export default function ImportCheckPage() {
     <main className="mx-auto max-w-3xl space-y-8 bg-background p-6">
       <h1 className="text-page-title text-heading">Import check (dev only)</h1>
       <DevImportForm />
+      <section aria-labelledby="recategorise-heading" className="space-y-2">
+        <h2 id="recategorise-heading" className="text-card-title text-heading">
+          recategoriseTransaction
+        </h2>
+        <DevRecategoriseForm />
+      </section>
       <section aria-labelledby="statements-heading">
         <h2 id="statements-heading" className="text-card-title text-heading">
           getStatements()
