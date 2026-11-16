@@ -329,3 +329,21 @@ Solid arrows are calls and their answers, top to bottom in time order; the dashe
 - **`assignFreeFingerprints` failing** (no free fingerprint after 50 rounds) returns `unexpected`. It needs more than 50 identical earlier imports of the same row, so it should never happen in practice.
 - **Two message constants are duplicated** (`FILE_MESSAGE`, `STATEMENT_MESSAGE`) in `preview-statement.ts` and `import-statement.ts`. A `"use server"` file can only export async functions, so they can't be shared from the preview action. Moving them to a shared module would mean changing the preview file, which the brief didn't ask for.
 - **No `/dev` protection in `proxy.ts`.** The dev page relies on `notFound()` in production and on each action's own `auth()`.
+- **`getStatements()` callers need `await connection()` first.** Without it, Cache Components tries to prerender the session read and fails with "unstable value `crypto.getRandomValues()` while prerendering". This matches the existing pattern in `settings/page.tsx` and `profile-section.tsx`. The `/imports` page in Phase 3 must do the same.
+- **React 19 resets a form after a form action finishes,** which empties a file input. The dev page needs the file chosen again before each button press. The Phase 3 import flow must hold the chosen `File` in state, not rely on the input keeping it.
+
+## Manual check (16 Nov 2026, `next dev` with Turbopack on Windows)
+
+| Check | Result |
+|---|---|
+| Preview `synthetic-statement.csv` | `ready`: 297 rows, 1 May to 31 Oct 2026, balance consistent, 0 flagged, 0 issues |
+| Import it | `done`: 297 imported; statement `COMPLETED`; list refreshed without reload |
+| Same file again, preview | all 297 flagged (`matchedBy: "content"`) |
+| Import with no decision | `needs_decision`, nothing saved |
+| Import with "skip all" | `nothing_to_import`, nothing saved |
+| Import with "import all" | `done`: second copy of 297, each with a distinct fingerprint, 0 clashes in the database |
+| Database totals | each copy nets 19,248 pence, matching the preview's money in minus money out |
+| Activity | one `STATEMENT_IMPORT` event per successful import |
+| Delete the second copy | statement and its 297 transactions gone (cascade); first copy untouched |
+| Small synthetic Barclays PDF | **`pdf-parse` loaded fine under Turbopack.** Preview `ready` (Barclays, 4 rows, no columns); import `done` |
+| Server log | no descriptions, amounts or file contents logged |
