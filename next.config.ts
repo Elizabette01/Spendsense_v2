@@ -14,6 +14,13 @@ const nextConfig: NextConfig = {
       },
     },
   },
+  serverExternalPackages: ["pdf-parse", "@napi-rs/canvas"],
+
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "4.5mb",
+    },
+  },
 
   async headers() {
     return [
