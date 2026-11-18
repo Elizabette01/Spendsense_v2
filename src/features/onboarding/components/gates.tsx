@@ -17,10 +17,18 @@ export async function SendToOnboardingIfNeeded() {
   return null;
 }
 
-/** /onboarding: anyone already "done" goes to /dashboard; everyone else sees `children`. */
+/**
+ * /onboarding: anyone "done" leaves. Finished (completed or skipped) → /dashboard.
+ * Done only because they now have a statement → /onboarding/results.
+ * That second case is the moment the step-3 import succeeds: the import
+ * revalidates, which re-renders this page, and the user should land on their
+ * results, not skip past them.
+ */
 export async function OnboardingOnlyIfNeeded({ children }: { children: ReactNode }) {
   await connection();
-  if ((await getOnboardingState()) === "done") redirect("/dashboard");
+  if ((await getOnboardingState()) === "done") {
+    redirect((await hasFinishedOnboarding()) ? "/dashboard" : "/onboarding/results");
+  }
   return children;
 }
 
