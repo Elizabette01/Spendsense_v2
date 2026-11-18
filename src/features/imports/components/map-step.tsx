@@ -321,7 +321,7 @@ function SampleTable({ preview }: { preview: StatementPreview }) {
                 <td className="px-4 py-2 text-foreground">{row.description}</td>
                 <td
                   className={`px-4 py-2 text-right whitespace-nowrap sm:px-6 ${
-                    row.amountMinor > 0 ? "text-positive" : "text-heading"
+                    row.amountMinor > 0 ? "text-positive" : "text-destructive"
                   }`}
                 >
                   {row.amountMinor > 0 ? "+" : ""}

@@ -2,7 +2,6 @@
 
 import { useActionState, useEffect, useId, useRef, useState } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { FormAlert } from "@/components/ui/form-alert";
@@ -18,7 +17,6 @@ type Props = {
   categories: CategoryOption[];
 };
 
-/** The category cell: shows the category (or "Needs review") and opens the change dialog. */
 /**
  * After saving, a row can leave the list (the "Needs review" filter), taking this
  * button and its dialog with it, so focus would drop to the page. If that happens,
@@ -37,32 +35,64 @@ function focusHeadingIfRowLeaves(row: HTMLElement | null) {
   setTimeout(check, 100);
 }
 
-export function CategoryControl({ transactionId, merchant, category, categories }: Props) {
+/**
+ * The category pill (Transactions design): the category name, or a coral
+ * "Assign ▾" when there isn't one. Opens the change-category dialog.
+ * `menu` renders the row's "…" in a separate slot: a mouse shortcut to the same
+ * dialog, hidden from screen readers and the tab order because the pill
+ * already does the job.
+ */
+export function CategoryControl({
+  transactionId,
+  merchant,
+  category,
+  categories,
+  menu = false,
+}: Props & { menu?: boolean }) {
   const [open, setOpen] = useState(false);
   const [openCount, setOpenCount] = useState(0);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const openDialog = () => {
+    setOpenCount((count) => count + 1);
+    setOpen(true);
+  };
+
+  if (menu) {
+    return (
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-hidden="true"
+        onClick={() => {
+          // The pill for this row that's on screen (phones and desktops have separate layouts)
+          const pills = document.querySelectorAll<HTMLButtonElement>(
+            `button[data-transaction="${CSS.escape(transactionId)}"]`,
+          );
+          [...pills].find((pill) => pill.offsetParent !== null)?.click();
+        }}
+        className="flex size-8 items-center justify-center rounded-control text-foreground-subtle hover:bg-background hover:text-foreground"
+      >
+        …
+      </button>
+    );
+  }
 
   return (
     <>
       <button
         ref={buttonRef}
         type="button"
-        onClick={() => {
-          setOpenCount((count) => count + 1);
-          setOpen(true);
-        }}
+        data-transaction={transactionId}
+        onClick={openDialog}
         aria-label={`Change category for ${merchant}, currently ${category?.name ?? "needs review"}`}
-        className="rounded-control px-1 py-1 text-left focus-visible:outline-2 focus-visible:outline-primary"
+        className={`inline-flex max-w-full items-center gap-1 rounded-full px-3 py-1 text-label font-medium focus-visible:outline-2 focus-visible:outline-primary ${
+          category
+            ? "bg-accent text-accent-foreground hover:bg-brand-100 dark:hover:bg-brand-800"
+            : "bg-coral-light text-coral-strong hover:bg-coral-light/70"
+        }`}
       >
-        {category ? (
-          <span className="text-body text-foreground underline decoration-foreground-subtle underline-offset-4 hover:decoration-primary">
-            {category.name}
-          </span>
-        ) : (
-          <Badge tone="warning" icon="⚠">
-            Needs review
-          </Badge>
-        )}
+        <span className="truncate">{category ? category.name : "Assign"}</span>
+        {!category && <span aria-hidden="true">▾</span>}
       </button>
       {openCount > 0 && (
         <CategoryDialog
