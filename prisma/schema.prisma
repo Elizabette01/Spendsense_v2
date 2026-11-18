@@ -90,6 +90,15 @@ enum ActivityType {
   @@map("activity_type")
 }
 
+enum FinancialGoal {
+  SAVE_MORE
+  GET_OUT_OF_DEBT
+  UNDERSTAND_SPENDING
+  BUILD_WEALTH
+
+  @@map("financial_goal")
+}
+
 enum AuditAction {
   VIEW_USER_LIST
   VIEW_ANALYTICS
@@ -122,6 +131,7 @@ model User {
   auditLogsAsTarget AuditLog[]      @relation("AuditTarget")
   authTokens        AuthToken[]
   merchantRules     MerchantRule[]
+  onboarding        Onboarding?
   @@index([deletionScheduledFor])
   
 
@@ -185,6 +195,23 @@ model Category {
 
   @@unique([userId, name])
   @@map("categories")
+}
+
+// First-run answers. "Done" once completed or skipped (or the user has statements)
+model Onboarding {
+  id                 String         @id @default(cuid())
+  userId             String         @unique @map("user_id")
+  monthlyIncomeMinor Int?           @map("monthly_income_minor")
+  goal               FinancialGoal?
+  completedAt        DateTime?      @map("completed_at")
+  skippedAt          DateTime?      @map("skipped_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("onboarding")
 }
 
 // A user's remembered choice: transactions from this merchant go in this category
