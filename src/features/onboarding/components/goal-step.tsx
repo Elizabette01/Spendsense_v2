@@ -48,7 +48,7 @@ export function GoalStep({ onNext, headingRef }: { onNext: () => void; headingRe
           {GOALS.map((goal) => (
             <label
               key={goal.value}
-              className="flex cursor-pointer items-center gap-4 rounded-card border border-border bg-card px-4 py-3 hover:border-primary has-checked:border-primary has-checked:bg-accent has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-primary"
+              className="flex cursor-pointer items-center gap-4 rounded-card border border-foreground-subtle bg-card px-4 py-3 hover:border-primary has-checked:border-primary has-checked:bg-accent has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-primary"
             >
               <input type="radio" name="goal" value={goal.value} required className="sr-only" />
               <span

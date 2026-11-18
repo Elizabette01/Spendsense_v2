@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, type Ref } from "react";
+import { useActionState, useEffect, useState, type Ref } from "react";
 
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -15,6 +15,9 @@ const IDLE: OnboardingActionState = { status: "idle" };
 /** Step 1 (onboarding 1): monthly income. "Skip for now" moves on without saving. */
 export function IncomeStep({ onNext, headingRef }: { onNext: () => void; headingRef: Ref<HTMLHeadingElement> }) {
   const [state, action, pending] = useActionState(saveIncome, IDLE);
+  // Held in state: React resets a form after submitting, which would wipe
+  // what was typed when the server says it's not valid
+  const [value, setValue] = useState("");
 
   useEffect(() => {
     if (state.status === "saved") onNext();
@@ -55,6 +58,8 @@ export function IncomeStep({ onNext, headingRef }: { onNext: () => void; heading
               <input
                 {...control}
                 name="monthlyIncome"
+                value={value}
+                onChange={(event) => setValue(event.target.value)}
                 inputMode="numeric"
                 autoComplete="off"
                 placeholder="e.g. 3,200"
