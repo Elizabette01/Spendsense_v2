@@ -19,6 +19,7 @@ export const LIMITS = {
   importStatementUser: { limit: 10, windowSeconds: 60 * 60 },
   deleteStatementUser: { limit: 20, windowSeconds: 60 * 60 },
   recategoriseUser: { limit: 120, windowSeconds: 60 * 60 },
+  onboardingUser: { limit: 30, windowSeconds: 60 * 60 },
 } as const;
 
 type RateLimitResult = {

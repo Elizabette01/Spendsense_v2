@@ -5,8 +5,8 @@ import { useId } from "react";
 import { Button } from "@/components/ui/button";
 import { formatDay, formatMoney, plural } from "@/lib/format";
 
-import type { DuplicateChoice } from "../schemas";
-import type { FlaggedPreviewRow } from "../server/build-preview";
+import type { DuplicateChoice } from "@/features/imports/schemas";
+import type { FlaggedPreviewRow } from "@/features/imports/server/build-preview";
 
 export type DuplicateChoices = Record<string, DuplicateChoice | undefined>;
 

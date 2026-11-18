@@ -3,12 +3,17 @@ import { Suspense } from "react";
 
 import { DashboardBody, DashboardHeader } from "@/features/dashboard/components/dashboard-body";
 import { DashboardSkeleton } from "@/features/dashboard/components/dashboard-extras";
+import { SendToOnboardingIfNeeded } from "@/features/onboarding/components/gates";
 
 export const metadata: Metadata = { title: "Dashboard · SpendSense" };
 
 export default function DashboardPage() {
   return (
     <div className="mx-auto flex max-w-269 flex-col gap-6">
+      {/* First-time users go to /onboarding (checked per request, so in its own Suspense) */}
+      <Suspense fallback={null}>
+        <SendToOnboardingIfNeeded />
+      </Suspense>
       <Suspense
         fallback={
           <div aria-hidden="true" className="flex flex-col gap-2">

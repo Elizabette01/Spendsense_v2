@@ -701,3 +701,14 @@ The `/transactions` page now follows the Transactions design.
 - **`src/app/(app)/transactions/page.tsx`**: parses the filters inside `<Suspense>` and passes them down; no subtitle (design).
 
 **Departures from the image:** money out is red (requested earlier); the second line of an uncategorised row is its bank description, because there's no "confidence" in the data; 50 rows per page (the image shows 5 as an example); **Date range** lists months with data, because statements are historical.
+
+## Moved to shared components (Phase 5)
+
+Onboarding step 3 uses the same column check, duplicate choices and failure wording, and features can't import each other. So in Phase 5 these moved with `git mv` to `src/components/statement-import/`. Their code is unchanged except import paths:
+
+- `components/map-step.tsx` → `src/components/statement-import/map-step.tsx`
+- `components/duplicates-section.tsx` → `src/components/statement-import/duplicates-section.tsx`
+- `components/failure-copy.ts` → `src/components/statement-import/failure-copy.ts`
+- `file-rules.ts` → `src/components/statement-import/file-rules.ts` (its test stays here, because it compares against the server's `MAX_FILE_BYTES`)
+
+The entries above still describe what each file does; only the location changed. `import-flow.tsx` and `upload-step.tsx` now import them from `@/components/statement-import/…`. See `docs/onboarding/file-guide.md` for how onboarding uses them.
