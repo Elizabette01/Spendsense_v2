@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { MAX_FILE_BYTES } from "./server/read-statement";
-import { MAX_UPLOAD_BYTES, checkUpload } from "./file-rules";
+import { MAX_UPLOAD_BYTES, checkUpload } from "@/components/statement-import/file-rules";
 
 vi.mock("server-only", () => ({}));
 

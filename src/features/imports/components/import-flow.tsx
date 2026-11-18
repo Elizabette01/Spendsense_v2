@@ -14,12 +14,12 @@ import { Dialog } from "@/components/ui/dialog";
 
 import { importStatement, type ImportResult } from "../actions/import-statement";
 import { previewStatement } from "../actions/preview-statement";
-import { checkUpload } from "../file-rules";
+import { checkUpload } from "@/components/statement-import/file-rules";
 import type { ColumnMappingInput, DuplicateDecisions } from "../schemas";
 import type { StatementPreview } from "../server/build-preview";
 import { DoneStep } from "./done-step";
-import { failureCopy } from "./failure-copy";
-import { MapStep } from "./map-step";
+import { failureCopy } from "@/components/statement-import/failure-copy";
+import { MapStep } from "@/components/statement-import/map-step";
 import { ProcessingStep } from "./processing-step";
 import { Stepper } from "./stepper";
 import { UploadStep } from "./upload-step";

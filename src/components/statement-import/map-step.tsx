@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/button";
 import { FormAlert } from "@/components/ui/form-alert";
 import { formatDay, formatMoney, formatMoneyAbs, plural } from "@/lib/format";
 
-import type { ColumnRole, RowIssueReason } from "../parsers/types";
-import type { ColumnMappingInput, DuplicateDecisions } from "../schemas";
-import type { PreviewColumns, StatementPreview } from "../server/build-preview";
+import type { ColumnRole, RowIssueReason } from "@/features/imports/parsers/types";
+import type { ColumnMappingInput, DuplicateDecisions } from "@/features/imports/schemas";
+import type { PreviewColumns, StatementPreview } from "@/features/imports/server/build-preview";
 import {
   DuplicatesSection,
   initialDuplicateChoices,

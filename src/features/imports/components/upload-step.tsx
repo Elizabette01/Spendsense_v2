@@ -4,7 +4,7 @@ import { useState, type RefObject } from "react";
 
 import { Button } from "@/components/ui/button";
 
-import { ACCEPT_ATTRIBUTE } from "../file-rules";
+import { ACCEPT_ATTRIBUTE } from "@/components/statement-import/file-rules";
 
 type UploadStepProps = {
   inputRef: RefObject<HTMLInputElement | null>;
