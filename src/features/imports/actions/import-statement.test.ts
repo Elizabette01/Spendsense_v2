@@ -15,7 +15,24 @@ type SavedTransaction = {
   amountMinor: number;
   categoryId: string | null;
   categorisedBy: string | null;
+  categoryLowConfidence: boolean;
   fingerprint: string;
+};
+
+type FakeRule = {
+  userId: string;
+  merchantKey: string;
+  direction: "IN" | "OUT";
+  categoryId: string;
+  source: "USER" | "AI";
+  lowConfidence: boolean;
+};
+
+type FakeAnswer = {
+  merchantKey: string;
+  direction: "in" | "out";
+  categoryId: string;
+  confidence: "high" | "low";
 };
 
 const fake = vi.hoisted(() => ({
@@ -32,8 +49,31 @@ const fake = vi.hoisted(() => ({
   activity: [] as { type: string; userId: string }[],
   afterCallbacks: [] as (() => Promise<void>)[],
   revalidated: [] as string[],
-  merchantRules: [] as { userId: string; merchantKey: string; categoryId: string }[],
+  merchantRules: [] as FakeRule[],
   merchantRuleQueries: 0,
+  ruleCreateCalls: [] as { data: FakeRule[]; skipDuplicates?: boolean }[],
+  /** null = no API key. Otherwise answers each request (or throws). */
+  aiReply: null as
+    | null
+    | ((sent: { merchantKey: string; direction: "in" | "out" }[]) => FakeAnswer[] | Error),
+  aiRequests: 0,
+}));
+
+// The real ai.ts runs, against a fake client: no test ever calls the real API
+vi.mock("@/lib/ai/client", () => ({
+  getAnthropic: () =>
+    fake.aiReply === null
+      ? null
+      : {
+          messages: {
+            parse: async (params: { messages: { content: string }[] }) => {
+              fake.aiRequests += 1;
+              const answers = fake.aiReply!(JSON.parse(params.messages[0].content));
+              if (answers instanceof Error) throw answers;
+              return { parsed_output: { answers }, stop_reason: "end_turn" };
+            },
+          },
+        },
 }));
 
 vi.mock("server-only", () => ({}));
@@ -80,7 +120,9 @@ vi.mock("@/lib/db", () => {
           fake.merchantRuleQueries += 1;
           return fake.merchantRules
             .filter((rule) => rule.userId === where.userId)
-            .map(({ merchantKey, categoryId }) => ({ merchantKey, categoryId }));
+            .map(({ merchantKey, direction, categoryId, source, lowConfidence }) => ({
+              merchantKey, direction, categoryId, source, lowConfidence,
+            }));
         },
       },
       activityEvent: {
@@ -110,6 +152,26 @@ vi.mock("@/lib/db", () => {
               if (fake.failCreateMany) throw fake.failCreateMany;
               transactions.push(...data);
               return { count: data.length };
+            },
+          },
+          merchantRule: {
+            // Like Postgres: unique on (userId, merchantKey, direction)
+            createMany: async (args: { data: FakeRule[]; skipDuplicates?: boolean }) => {
+              fake.ruleCreateCalls.push(args);
+              let count = 0;
+              for (const rule of args.data) {
+                const exists = fake.merchantRules.some(
+                  (r) =>
+                    r.userId === rule.userId &&
+                    r.merchantKey === rule.merchantKey &&
+                    r.direction === rule.direction,
+                );
+                if (exists && args.skipDuplicates) continue;
+                if (exists) throw new Error("unique violation");
+                fake.merchantRules.push(rule);
+                count += 1;
+              }
+              return { count };
             },
           },
         };
@@ -145,6 +207,10 @@ const CATEGORIES = [
   { merchant: "Example Payroll", categoryId: "sys_salary", categorisedBy: "RULE" },
   { merchant: "Test Cafe", categoryId: "sys_eating_out", categorisedBy: "RULE" },
 ];
+
+function userRule(merchantKey: string, categoryId: string, userId = "user-1"): FakeRule {
+  return { userId, merchantKey, direction: "OUT", categoryId, source: "USER", lowConfidence: false };
+}
 
 const IDLE: ImportState = { status: "idle" };
 const NO_DUPLICATES = JSON.stringify({ overrides: {} });
@@ -182,6 +248,9 @@ beforeEach(() => {
   fake.revalidated.length = 0;
   fake.merchantRules.length = 0;
   fake.merchantRuleQueries = 0;
+  fake.ruleCreateCalls.length = 0;
+  fake.aiReply = null;
+  fake.aiRequests = 0;
 });
 
 function expectNothingSaved() {
@@ -271,7 +340,10 @@ describe("importStatement: saving", () => {
         skippedCount: 1,
         issueCount: 0,
         categorisedCount: 2,
+        aiCategorisedCount: 0,
+        lowConfidenceCount: 0,
         needsReviewCount: 1,
+        needsReviewMerchantCount: 1,
         periodStart: "2026-03-01",
         periodEnd: "2026-03-05",
       },
@@ -302,6 +374,7 @@ describe("importStatement: saving", () => {
         amountMinor: row.amountMinor,
         categoryId: CATEGORIES[index].categoryId,
         categorisedBy: CATEGORIES[index].categorisedBy,
+        categoryLowConfidence: false,
         fingerprint: FINGERPRINTS[index],
       })),
     );
@@ -338,9 +411,9 @@ describe("importStatement: saving", () => {
 describe("importStatement: categorising", () => {
   it("applies this user's merchant rules before built-in rules, loading them once", async () => {
     fake.merchantRules.push(
-      { userId: "user-1", merchantKey: "fake grocer", categoryId: "sys_groceries" },
-      { userId: "user-1", merchantKey: "test cafe", categoryId: "cat_my_treats" },
-      { userId: "someone-else", merchantKey: "example payroll", categoryId: "sys_gifts" },
+      userRule("fake grocer", "sys_groceries"),
+      userRule("test cafe", "cat_my_treats"),
+      { ...userRule("example payroll", "sys_gifts", "someone-else"), direction: "IN" },
     );
 
     const state = await importStatement(IDLE, importForm());
@@ -372,6 +445,137 @@ describe("importStatement: categorising", () => {
       const expected = row.description === "NETFLIX.COM" ? "sys_subscriptions" : null;
       expect(row.categoryId).toBe(expected);
     }
+  });
+});
+
+describe("importStatement: AI categorisation", () => {
+  /** Two unknown merchants (one twice) plus the rows the rules already place. */
+  const AI_CSV = [
+    HEADER,
+    "01/03/2026,FAKE GROCER,-12.50",
+    "02/03/2026,FAKE GROCER,-8.00",
+    "03/03/2026,ZQX HOLDINGS,-40.00",
+    "04/03/2026,J SMITH,25.00",
+    "05/03/2026,TEST CAFE,-3.20",
+  ].join("\n");
+
+  function aiImportForm() {
+    return importForm(undefined, csvFile(AI_CSV));
+  }
+
+  it("fills what the rules can't place, counts it, and remembers the answers", async () => {
+    fake.aiReply = () => [
+      { merchantKey: "fake grocer", direction: "out", categoryId: "sys_groceries", confidence: "high" },
+      { merchantKey: "j smith", direction: "in", categoryId: "sys_people_in", confidence: "low" },
+      { merchantKey: "zqx holdings", direction: "out", categoryId: "unsure", confidence: "low" },
+    ];
+
+    const state = await importStatement(IDLE, aiImportForm());
+
+    expect(state).toMatchObject({
+      status: "done",
+      result: {
+        importedCount: 5,
+        categorisedCount: 4,
+        aiCategorisedCount: 3,
+        lowConfidenceCount: 1,
+        needsReviewCount: 1,
+        needsReviewMerchantCount: 1,
+      },
+    });
+    expect(fake.aiRequests).toBe(1);
+    expect(
+      fake.transactions.map((t) => [t.categoryId, t.categorisedBy, t.categoryLowConfidence]),
+    ).toEqual([
+      ["sys_groceries", "AI", false],
+      ["sys_groceries", "AI", false],
+      [null, null, false],
+      ["sys_people_in", "AI", true],
+      ["sys_eating_out", "RULE", false],
+    ]);
+    expect(fake.ruleCreateCalls).toEqual([
+      {
+        skipDuplicates: true,
+        data: [
+          { merchantKey: "fake grocer", direction: "OUT", categoryId: "sys_groceries", lowConfidence: false, userId: "user-1", source: "AI" },
+          { merchantKey: "j smith", direction: "IN", categoryId: "sys_people_in", lowConfidence: true, userId: "user-1", source: "AI" },
+        ],
+      },
+    ]);
+  });
+
+  it("still imports when the AI fails; those rows need review", async () => {
+    const failure = new Error("FAKE GROCER leaked into a message");
+    failure.name = "APIConnectionTimeoutError";
+    fake.aiReply = () => failure;
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const state = await importStatement(IDLE, aiImportForm());
+
+    expect(state).toMatchObject({
+      status: "done",
+      result: {
+        importedCount: 5,
+        aiCategorisedCount: 0,
+        needsReviewCount: 4,
+        needsReviewMerchantCount: 3,
+      },
+    });
+    expect(fake.transactions).toHaveLength(5);
+    expect(fake.ruleCreateCalls).toEqual([]);
+    expect(JSON.stringify(log.mock.calls)).not.toContain("FAKE GROCER");
+    log.mockRestore();
+  });
+
+  it("still imports with no API key, making no request", async () => {
+    const state = await importStatement(IDLE, aiImportForm());
+    expect(state).toMatchObject({ status: "done", result: { importedCount: 5, aiCategorisedCount: 0 } });
+    expect(fake.aiRequests).toBe(0);
+  });
+
+  it("uses a remembered AI answer instead of asking again", async () => {
+    fake.aiReply = () => [];
+    fake.merchantRules.push({
+      ...userRule("fake grocer", "sys_groceries"),
+      source: "AI",
+      lowConfidence: true,
+    });
+
+    await importStatement(IDLE, importForm());
+
+    expect(fake.aiRequests).toBe(0); // the other rows are placed by built-in rules
+    expect(fake.transactions[0]).toMatchObject({
+      categoryId: "sys_groceries",
+      categorisedBy: "AI",
+      categoryLowConfidence: true,
+    });
+  });
+
+  it("never overwrites a USER rule, even one saved while the AI was answering", async () => {
+    fake.aiReply = (sent) => {
+      // The user sets a rule in another tab while this import waits on the AI
+      fake.merchantRules.push(userRule("fake grocer", "cat_my_food"));
+      return sent.map((item) => ({ ...item, categoryId: "sys_shopping", confidence: "high" as const }));
+    };
+
+    const state = await importStatement(IDLE, importForm());
+
+    expect(state).toMatchObject({ status: "done" });
+    expect(fake.merchantRules).toEqual([userRule("fake grocer", "cat_my_food")]);
+  });
+
+  it("never sends another user's rules or data, and loads rules for this user only", async () => {
+    fake.merchantRules.push({ ...userRule("fake grocer", "sys_gifts", "someone-else"), source: "AI" });
+    const sent: unknown[] = [];
+    fake.aiReply = (items) => {
+      sent.push(...items);
+      return [];
+    };
+
+    await importStatement(IDLE, importForm());
+
+    // Someone else's remembered answer isn't used: the merchant is asked about
+    expect(sent).toEqual([{ merchantKey: "fake grocer", merchant: "Fake Grocer", direction: "out" }]);
   });
 });
 
