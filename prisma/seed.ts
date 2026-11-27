@@ -34,11 +34,13 @@ const systemCategories = [
   { id: "sys_cash", name: "Cash Withdrawals", type: "EXPENSE" },
   { id: "sys_expenses", name: "Expenses", type: "EXPENSE" },
   { id: "sys_general", name: "General", type: "EXPENSE" },
+  { id: "sys_people_out", name: "Sent to people", type: "EXPENSE" },
   // Income
   { id: "sys_salary", name: "Salary", type: "INCOME" },
   { id: "sys_benefits", name: "Benefits", type: "INCOME" },
   { id: "sys_refunds", name: "Refunds", type: "INCOME" },
   { id: "sys_other_income", name: "Other Income", type: "INCOME" },
+  { id: "sys_people_in", name: "Received from people", type: "INCOME" },
   // Transfer
   { id: "sys_transfers", name: "Transfers", type: "TRANSFER" },
   { id: "sys_savings", name: "Savings", type: "TRANSFER" },

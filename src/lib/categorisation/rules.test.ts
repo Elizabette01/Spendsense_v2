@@ -9,8 +9,12 @@ const SEEDED = [
   "sys_health_fitness", "sys_holidays", "sys_family", "sys_education", "sys_gifts",
   "sys_charity", "sys_finances", "sys_cash", "sys_expenses", "sys_general",
   "sys_salary", "sys_benefits", "sys_refunds", "sys_other_income", "sys_transfers",
-  "sys_savings",
+  "sys_savings", "sys_people_out", "sys_people_in",
 ];
+
+// Payments between people can't be spotted by keyword: only the AI (or the
+// user) chooses these, so built-in rules don't have to cover them
+const NOT_BY_RULES = ["sys_people_out", "sys_people_in"];
 
 const OUT = -1_000;
 const IN = 1_000;
@@ -42,6 +46,12 @@ describe("matchBuiltInRule: money out", () => {
     ["NETFLIX.COM", "sys_subscriptions"],
     ["SPOTIFY UK", "sys_subscriptions"],
     ["AMAZON PRIME*UK", "sys_subscriptions"],
+    ["AMZN PRIME AB12CD", "sys_subscriptions"],
+    ["AMAZON.CO.UK PRIME*XY34", "sys_subscriptions"],
+    ["AMZNPRIME", "sys_subscriptions"],
+    ["AMZN MKTP UK*AB12", "sys_shopping"],
+    ["AMAZON MARKETPLACE", "sys_shopping"],
+    ["PAYPAL *EXAMPLESHOP", null],
     ["APPLE.COM/BILL", "sys_subscriptions"],
     ["AMAZON.CO.UK*MK1AB", "sys_shopping"],
     ["PRIMARK", "sys_shopping"],
@@ -95,6 +105,12 @@ describe("matchBuiltInRule: money in", () => {
     expect(matchBuiltInRule("RYANAIR DAC", IN)).toBe("sys_refunds");
     expect(matchBuiltInRule("NETFLIX.COM", IN)).toBe("sys_refunds");
   });
+
+  it("treats any money in from Amazon as a refund, Prime included", () => {
+    expect(matchBuiltInRule("AMZN MKTP UK*AB12", IN)).toBe("sys_refunds");
+    expect(matchBuiltInRule("AMAZON MARKETPLACE", IN)).toBe("sys_refunds");
+    expect(matchBuiltInRule("AMZN PRIME AB12CD", IN)).toBe("sys_refunds");
+  });
 });
 
 describe("matchBuiltInRule: signs", () => {
@@ -140,6 +156,8 @@ describe("RULES", () => {
 
   it("covers every seeded system category", () => {
     const covered = new Set(RULES.map((rule) => rule.categoryId));
-    expect(SEEDED.filter((id) => !covered.has(id as never))).toEqual([]);
+    expect(
+      SEEDED.filter((id) => !covered.has(id as never) && !NOT_BY_RULES.includes(id)),
+    ).toEqual([]);
   });
 });

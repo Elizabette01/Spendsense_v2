@@ -19,6 +19,8 @@ export const LIMITS = {
   importStatementUser: { limit: 10, windowSeconds: 60 * 60 },
   deleteStatementUser: { limit: 20, windowSeconds: 60 * 60 },
   recategoriseUser: { limit: 120, windowSeconds: 60 * 60 },
+  // Each run can send up to 300 merchants to the AI: kept low to cap cost
+  aiCategoriseUser: { limit: 5, windowSeconds: 60 * 60 },
 } as const;
 
 type RateLimitResult = {

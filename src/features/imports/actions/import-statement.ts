@@ -5,7 +5,8 @@ import { after } from "next/server";
 
 import { auth } from "@/auth";
 import { Prisma } from "@/generated/prisma/client";
-import { categoriseRows } from "@/lib/categorisation/categorise";
+import { categoriseRows, directionOf } from "@/lib/categorisation/categorise";
+import { merchantKey } from "@/lib/categorisation/merchant";
 import { db } from "@/lib/db";
 import { LIMITS, rateLimit } from "@/lib/rate-limit";
 
@@ -41,10 +42,16 @@ export type ImportResult = {
   skippedCount: number;
   /** Rows that couldn't be read. */
   issueCount: number;
-  /** Rows given a category by the user's rules or the built-in rules. */
+  /** Rows given a category (by the user's rules, built-in rules or AI). */
   categorisedCount: number;
+  /** Of those, rows categorised by AI (remembered or live). */
+  aiCategorisedCount: number;
+  /** AI guesses marked "check": kept, and they don't count as needing review. */
+  lowConfidenceCount: number;
   /** Rows with no category yet. */
   needsReviewCount: number;
+  /** Unique merchants (merchant key + direction) among the rows needing review. */
+  needsReviewMerchantCount: number;
   /** ISO date (YYYY-MM-DD). */
   periodStart: string | null;
   periodEnd: string | null;
@@ -68,6 +75,37 @@ const TRANSACTION_TIMEOUT_MS = 60_000;
 
 function fail(reason: ImportFailureReason, message: string): ImportState {
   return { status: "error", reason, message };
+}
+
+/** The Done screen's categorisation figures. Pure. */
+function countCategories(
+  rows: readonly { amountMinor: number }[],
+  categories: Awaited<ReturnType<typeof categoriseRows>>["decisions"],
+) {
+  let categorisedCount = 0;
+  let aiCategorisedCount = 0;
+  let lowConfidenceCount = 0;
+  const reviewMerchants = new Set<string>();
+
+  categories.forEach((category, index) => {
+    if (category.categoryId === null) {
+      // Reviewed per merchant: one fix covers all its rows in this direction
+      const direction = directionOf(rows[index].amountMinor);
+      reviewMerchants.add(`${merchantKey(category.merchant)}|${direction}`);
+      return;
+    }
+    categorisedCount += 1;
+    if (category.categorisedBy === "AI") aiCategorisedCount += 1;
+    if (category.lowConfidence) lowConfidenceCount += 1;
+  });
+
+  return {
+    categorisedCount,
+    aiCategorisedCount,
+    lowConfidenceCount,
+    needsReviewCount: rows.length - categorisedCount,
+    needsReviewMerchantCount: reviewMerchants.size,
+  };
 }
 
 export async function importStatement(
@@ -194,13 +232,25 @@ export async function importStatement(
 
     const skippedCount = read.analysis.normalised.skippedZero;
 
-    // Categorise: the user's merchant rules (loaded once), then built-in rules
-    const userRules = await db.merchantRule.findMany({
+    // Categorise: user rules → built-in rules → remembered AI → live AI.
+    // This runs BEFORE the database transaction, so no transaction is held
+    // open while we wait on the network. If the AI fails or there's no key,
+    // those rows simply stay "needs review": the import still goes ahead.
+    const savedRules = await db.merchantRule.findMany({
       where: { userId },
-      select: { merchantKey: true, categoryId: true },
+      select: {
+        merchantKey: true,
+        direction: true,
+        categoryId: true,
+        source: true,
+        lowConfidence: true,
+      },
     });
-    const categories = categoriseRows(finalRows, userRules);
-    const categorisedCount = categories.filter((c) => c.categoryId !== null).length;
+    const { decisions: categories, newAiRules } = await categoriseRows(
+      finalRows,
+      savedRules,
+    );
+    const counts = countCategories(finalRows, categories);
 
     // 9. Save the statement and its transactions together: all or nothing
     const statementId = await db.$transaction(
@@ -234,9 +284,20 @@ export async function importStatement(
                 amountMinor: row.amountMinor,
                 categoryId: category.categoryId,
                 categorisedBy: category.categorisedBy,
+                categoryLowConfidence: category.lowConfidence,
                 fingerprint: row.fingerprint,
               };
             }),
+          });
+        }
+
+        // Remember new AI answers so these merchants are never sent again.
+        // skipDuplicates: if a rule already exists for this merchant and
+        // direction (above all a USER rule), it is left exactly as it is.
+        if (newAiRules.length > 0) {
+          await tx.merchantRule.createMany({
+            data: newAiRules.map((rule) => ({ ...rule, userId, source: "AI" as const })),
+            skipDuplicates: true,
           });
         }
 
@@ -272,8 +333,7 @@ export async function importStatement(
         duplicateCount,
         skippedCount,
         issueCount: read.analysis.normalised.issues.length,
-        categorisedCount,
-        needsReviewCount: finalRows.length - categorisedCount,
+        ...counts,
         periodStart,
         periodEnd,
       },

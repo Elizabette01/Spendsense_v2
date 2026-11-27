@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { auth } from "@/auth";
+import type { Prisma } from "@/generated/prisma/client";
+import { directionOf } from "@/lib/categorisation/categorise";
 import { deriveMerchant, merchantKey } from "@/lib/categorisation/merchant";
 import { db } from "@/lib/db";
 import { LIMITS, rateLimit } from "@/lib/rate-limit";
@@ -58,7 +60,7 @@ export async function recategoriseTransaction(
     // 4. The transaction must be this user's
     const transaction = await db.transaction.findFirst({
       where: { id: transactionId, userId },
-      select: { id: true, merchant: true, description: true },
+      select: { id: true, merchant: true, description: true, amountMinor: true },
     });
     if (!transaction) return fail("We couldn't find that transaction.");
 
@@ -72,17 +74,25 @@ export async function recategoriseTransaction(
     // Older rows may have no merchant saved; work it out the same way imports do
     const merchant = transaction.merchant ?? deriveMerchant(transaction.description);
     const key = merchantKey(merchant);
+    const direction = directionOf(transaction.amountMinor);
 
     const updatedCount = await db.$transaction(async (tx) => {
-      // 6. Always: this transaction, decided by the user
+      // 6. Always: this transaction, decided by the user. Any "AI guess,
+      //    check" marker goes, because the user has now chosen.
       const single = await tx.transaction.updateMany({
         where: { id: transaction.id, userId },
-        data: { categoryId: category.id, categorisedBy: "USER", merchant },
+        data: {
+          categoryId: category.id,
+          categorisedBy: "USER",
+          categoryLowConfidence: false,
+          merchant,
+        },
       });
       if (!applyToMerchant || key === "") return single.count;
 
-      // 7. Every transaction of this user from the same merchant (matched by
-      //    key, the same way import rules match), then remember it
+      // 7. The other transactions of this user from the same merchant (matched
+      //    by key, the same way import rules match) and in the same direction
+      //    (fixing Amazon refunds must not touch Amazon purchases)
       const known = await tx.transaction.findMany({
         where: { userId, merchant: { not: null } },
         distinct: ["merchant"],
@@ -92,25 +102,53 @@ export async function recategoriseTransaction(
         .map((row) => row.merchant as string)
         .filter((name) => merchantKey(name) === key);
 
+      // The rule this replaces, if the user set one before
+      const previous = await tx.merchantRule.findUnique({
+        where: { userId_merchantKey_direction: { userId, merchantKey: key, direction } },
+        select: { categoryId: true, source: true },
+      });
+
+      // Which rows change: anything not chosen by the user (AI, RULE or
+      // none), plus rows that still carry the user's previous merchant-wide
+      // choice. A row the user set one by one to something else is left alone.
+      const notChosenByUser: Prisma.TransactionWhereInput[] = [
+        { categorisedBy: null },
+        { categorisedBy: { in: ["AI", "RULE"] } },
+      ];
+      if (previous?.source === "USER") {
+        notChosenByUser.push({ categorisedBy: "USER", categoryId: previous.categoryId });
+      }
+
       const others = await tx.transaction.updateMany({
         where: {
           userId,
           merchant: { in: sameMerchant },
+          amountMinor: direction === "OUT" ? { lt: 0 } : { gt: 0 },
           NOT: { id: transaction.id },
+          OR: notChosenByUser,
         },
-        data: { categoryId: category.id, categorisedBy: "USER" },
+        data: { categoryId: category.id, categorisedBy: "USER", categoryLowConfidence: false },
       });
 
+      // 8. Remember it for future imports. This replaces an AI rule for the
+      //    same merchant and direction: the user always wins.
       await tx.merchantRule.upsert({
-        where: { userId_merchantKey: { userId, merchantKey: key } },
-        create: { userId, merchantKey: key, categoryId: category.id },
-        update: { categoryId: category.id },
+        where: { userId_merchantKey_direction: { userId, merchantKey: key, direction } },
+        create: {
+          userId,
+          merchantKey: key,
+          direction,
+          categoryId: category.id,
+          source: "USER",
+          lowConfidence: false,
+        },
+        update: { categoryId: category.id, source: "USER", lowConfidence: false },
       });
 
       return single.count + others.count;
     });
 
-    // 8. Refresh every view that shows categories
+    // 9. Refresh every view that shows categories
     revalidatePath("/transactions");
     revalidatePath("/dashboard");
 

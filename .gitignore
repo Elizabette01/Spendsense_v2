@@ -44,3 +44,12 @@ next-env.d.ts
 /src/generated/prisma
 
 .UI
+
+# personal practice files (kept locally, never committed)
+/scripts/ai-playground.ts
+
+# docs are kept locally; only the synthetic demo statement is tracked
+/docs/*
+!/docs/demo/
+/docs/demo/*
+!/docs/demo/synthetic-statement.csv

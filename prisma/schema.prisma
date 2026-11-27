@@ -60,6 +60,23 @@ enum CategorisedBy {
   @@map("categorised_by")
 }
 
+// Who created a merchant rule: the user (always wins) or a remembered AI answer
+enum RuleSource {
+  USER
+  AI
+
+  @@map("rule_source")
+}
+
+// Money in or money out: the same merchant can need different categories
+// (Amazon purchases are Shopping, Amazon money in is a Refund)
+enum Direction {
+  IN
+  OUT
+
+  @@map("direction")
+}
+
 // Billing and admin enums
 enum Plan {
   MONTHLY
@@ -187,12 +204,16 @@ model Category {
   @@map("categories")
 }
 
-// A user's remembered choice: transactions from this merchant go in this category
+// A remembered choice: transactions from this merchant, in this direction,
+// go in this category. Set by the user, or remembered from an AI answer.
 model MerchantRule {
-  id          String @id @default(cuid())
-  userId      String @map("user_id")
-  merchantKey String @map("merchant_key")
-  categoryId  String @map("category_id")
+  id            String     @id @default(cuid())
+  userId        String     @map("user_id")
+  merchantKey   String     @map("merchant_key")
+  direction     Direction
+  categoryId    String     @map("category_id")
+  source        RuleSource @default(USER)
+  lowConfidence Boolean    @default(false) @map("low_confidence")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -200,7 +221,7 @@ model MerchantRule {
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, merchantKey])
+  @@unique([userId, merchantKey, direction])
   @@index([categoryId])
   @@map("merchant_rules")
 }
@@ -240,6 +261,8 @@ model Transaction {
   amountMinor   Int            @map("amount_minor")
   currency      String         @default("GBP") @db.Char(3)
   categorisedBy CategorisedBy? @map("categorised_by")
+  // An AI guess the user should check: shown with a soft "check" marker
+  categoryLowConfidence Boolean @default(false) @map("category_low_confidence")
   fingerprint   String
 
   createdAt DateTime @default(now()) @map("created_at")

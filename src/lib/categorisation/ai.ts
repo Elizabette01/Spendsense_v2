@@ -1,19 +1,28 @@
-/**
- * Lesson 2 playground: structured output.
- * Run: npx tsx --env-file=.env.local scripts/ai-playground.ts
- */
-
-import Anthropic from "@anthropic-ai/sdk";
+import "server-only";
+import type Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 
-const client = new Anthropic(); // reads ANTHROPIC_API_KEY from .env.local
+import { getAnthropic } from "../ai/client";
+
+/**
+ * AI categorisation: Elizabette's design from scripts/ai-playground.ts.
+ *
+ * Parts 1, 2, 3 and 5 below are copied from the playground UNCHANGED
+ * (only `export` added so tests and the categoriser can use them).
+ * `aiCategorise` at the bottom is new: it adds batching, limits and the
+ * "never fail the import" fallback around her call.
+ *
+ * What leaves the app: for each unique merchant, only the cleaned merchant
+ * name, its merchant key and the direction. Never descriptions, amounts,
+ * dates, account details, the user's name, or ids.
+ */
 
 // ─────────────────────────────────────────────────────────────
 // PART 1: The categories the AI may choose, split by direction.
 // (sys_general and sys_expenses are left out on purpose.)
 // ─────────────────────────────────────────────────────────────
-const OUT_IDS = [
+export const OUT_IDS = [
   "sys_groceries",
   "sys_eating_out",
   "sys_transport",
@@ -34,7 +43,7 @@ const OUT_IDS = [
   "sys_people_out", // new: money sent to people (not in the database yet)
 ] as const;
 
-const IN_IDS = [
+export const IN_IDS = [
   "sys_salary",
   "sys_benefits",
   "sys_refunds",
@@ -42,13 +51,13 @@ const IN_IDS = [
   "sys_people_in", // new: money received from people (not in the database yet)
 ] as const;
 
-const EITHER_IDS = ["sys_transfers", "sys_savings"] as const;
+export const EITHER_IDS = ["sys_transfers", "sys_savings"] as const;
 
 // ─────────────────────────────────────────────────────────────
 // PART 2: The system prompt (the standing rules).
 // No output-format section any more: the schema in PART 3 handles that.
 // ─────────────────────────────────────────────────────────────
-const CATEGORISE_SYSTEM_PROMPT = `You categorise bank transactions for SpendSense, a UK personal finance app.
+export const CATEGORISE_SYSTEM_PROMPT = `You categorise bank transactions for SpendSense, a UK personal finance app.
 
 <context>
 Each input item is one merchant from a UK bank statement. Merchant names are often shortened or cryptic.
@@ -111,54 +120,34 @@ Output:
 // PART 3: The schema. The API forces the reply into this shape.
 // categoryId is an enum, so the model cannot invent an id.
 // ─────────────────────────────────────────────────────────────
-const AnswerSchema = z.object({
+export const AnswerSchema = z.object({
   merchantKey: z.string(),
   direction: z.enum(["in", "out"]),
   categoryId: z.enum([...OUT_IDS, ...IN_IDS, ...EITHER_IDS, "unsure"]),
   confidence: z.enum(["high", "low"]),
 });
 
-const ResponseSchema = z.object({ answers: z.array(AnswerSchema) });
+export const ResponseSchema = z.object({ answers: z.array(AnswerSchema) });
 
-type Answer = z.infer<typeof AnswerSchema>; // a TypeScript type made from the schema
+export type Answer = z.infer<typeof AnswerSchema>; // a TypeScript type made from the schema
 
 // ─────────────────────────────────────────────────────────────
-// PART 4: Test data (what the app would send: merchant + direction only).
+// PART 4 (types only): what the app sends, merchant + direction only.
 // ─────────────────────────────────────────────────────────────
-type Direction = "in" | "out";
-type MerchantInput = {
+export type Direction = "in" | "out";
+export type MerchantInput = {
   merchantKey: string;
   merchant: string;
   direction: Direction;
 };
 
-const testMerchants: MerchantInput[] = [
-  { merchantKey: "tesco stores", merchant: "Tesco Stores", direction: "out" },
-  { merchantKey: "tfl travel", merchant: "TfL Travel", direction: "out" },
-  { merchantKey: "netflix", merchant: "Netflix", direction: "out" },
-  { merchantKey: "pret a manger", merchant: "Pret A Manger", direction: "out" },
-  {
-    merchantKey: "acme ltd payroll",
-    merchant: "Acme Ltd Payroll",
-    direction: "in",
-  },
-  { merchantKey: "amazon", merchant: "Amazon", direction: "out" },
-  { merchantKey: "amazon", merchant: "Amazon", direction: "in" },
-  { merchantKey: "paypal", merchant: "PayPal", direction: "out" },
-  { merchantKey: "j smith", merchant: "J Smith", direction: "out" },
-  { merchantKey: "hmrc", merchant: "HMRC", direction: "in" },
-  { merchantKey: "sarah jones", merchant: "Sarah Jones", direction: "in" },
-  { merchantKey: "costa coffee", merchant: "Costa Coffee", direction: "out" },
-
-];
-
 // ─────────────────────────────────────────────────────────────
 // PART 5: Check the answers. The schema guarantees the SHAPE;
 // this checks the SENSE. Anything doubtful becomes null ("needs review").
 // ─────────────────────────────────────────────────────────────
-type Checked = { categoryId: string; confidence: "high" | "low" } | null;
+export type Checked = { categoryId: string; confidence: "high" | "low" } | null;
 
-function checkAnswers(
+export function checkAnswers(
   inputs: MerchantInput[],
   answers: Answer[],
 ): Map<string, Checked> {
@@ -196,52 +185,109 @@ function checkAnswers(
 }
 
 // ─────────────────────────────────────────────────────────────
-// PART 6: Call the API and print the checked results.
-// // ─────────────────────────────────────────────────────────────
-async function main() {
-  const response = await client.messages.parse({
-    model: "claude-haiku-5-5",
-    max_tokens: 2000,
-    thinking: { type: "disabled" }, // classification doesn't need thinking
-    system: CATEGORISE_SYSTEM_PROMPT,
-    messages: [{ role: "user", content: JSON.stringify(testMerchants) }],
-    output_config: { format: zodOutputFormat(ResponseSchema) },
-  });
+// NEW: the call used by the app (PART 6 of the playground, made safe
+// for real imports).
+// ─────────────────────────────────────────────────────────────
 
-  const parsed = response.parsed_output; // already checked against the schema
-  if (!parsed) {
-    console.log("No usable answer. stop_reason:", response.stop_reason);
-    return;
-  }
+/** The one place the model is chosen. */
+export const AI_CATEGORISE_MODEL = "claude-haiku-5-5";
 
-  const results = checkAnswers(testMerchants, parsed.answers);
-  for (const [key, value] of results) {
-    console.log(
-      key.padEnd(24),
-      "→",
-      value ? `${value.categoryId} (${value.confidence})` : "needs review",
-    );
-  }
+/** At most this many merchants per import; the rest stay "needs review". */
+export const MAX_AI_MERCHANTS = 300;
+/** Merchants per request. */
+export const AI_BATCH_SIZE = 100;
+/** Per request. An import never waits longer than this for the AI. */
+export const AI_TIMEOUT_MS = 20_000;
 
-  console.log(response.usage);
+/**
+ * Output room for a batch. Each answer is roughly 40 tokens of JSON; 70 per
+ * merchant plus 1,000 spare means a full batch of 100 gets 8,000. (The
+ * playground used 2,000 for 12.) Too small would cut the JSON off and lose
+ * the whole batch.
+ */
+function maxTokensFor(batchSize: number): number {
+  return 1_000 + 70 * batchSize;
 }
 
-main().catch((error) => {
-  console.error(error.name, error.message);
-  process.exit(1);
-});
+/** `merchantKey|direction`: the same key `checkAnswers` uses. */
+export function aiKey(merchantKey: string, direction: Direction): string {
+  return `${merchantKey}|${direction}`;
+}
 
+/**
+ * Asks the AI for a category for each merchant.
+ *
+ * Returns a map from `merchantKey|direction` to a checked answer, or `null`
+ * ("needs review"). It never throws: no key, a timeout, an API error or an
+ * unusable reply all just mean `null` for the merchants affected, so an
+ * import can never fail because of the AI.
+ *
+ * `client` is only passed by tests; the app uses the real one.
+ */
+export async function aiCategorise(
+  items: readonly MerchantInput[],
+  client: Anthropic | null = getAnthropic(),
+): Promise<Map<string, Checked>> {
+  // Every merchant starts as "needs review"; duplicates are asked about once
+  const results = new Map<string, Checked>();
+  const unique: MerchantInput[] = [];
+  for (const item of items) {
+    const key = aiKey(item.merchantKey, item.direction);
+    if (results.has(key)) continue;
+    results.set(key, null);
+    unique.push(item);
+  }
 
-// Fake AI answers with deliberate mistakes: no API call, no cost
-// const fakeAnswers: Answer[] = [
-//   { merchantKey: "tesco stores", direction: "out", categoryId: "sys_salary", confidence: "high" },
-//   { merchantKey: "made up shop", direction: "out", categoryId: "sys_shopping", confidence: "high" },
-//   { merchantKey: "netflix", direction: "out", categoryId: "sys_subscriptions", confidence: "high" },
-//   { merchantKey: "netflix", direction: "out", categoryId: "sys_shopping", confidence: "low" },
-//   { merchantKey: "paypal", direction: "out", categoryId: "unsure", confidence: "low" },
-// ];
+  // No key: the app works without AI. No request is made.
+  if (!client || unique.length === 0) return results;
 
-// const checked = checkAnswers(testMerchants, fakeAnswers);
-// for (const [key, value] of checked) {
-//   console.log(key.padEnd(24), "→", value ? `${value.categoryId} (${value.confidence})` : "needs review");
-// }
+  // Cap per import, then split into batches sent at the same time
+  const toSend = unique.slice(0, MAX_AI_MERCHANTS);
+  const batches: MerchantInput[][] = [];
+  for (let start = 0; start < toSend.length; start += AI_BATCH_SIZE) {
+    batches.push(toSend.slice(start, start + AI_BATCH_SIZE));
+  }
+
+  const answered = await Promise.all(
+    batches.map((batch) => categoriseBatch(client, batch)),
+  );
+  for (const batchResults of answered) {
+    for (const [key, value] of batchResults) results.set(key, value);
+  }
+
+  return results;
+}
+
+/** One request. Any failure → every merchant in this batch stays `null`. */
+async function categoriseBatch(
+  client: Anthropic,
+  batch: MerchantInput[],
+): Promise<Map<string, Checked>> {
+  try {
+    const response = await client.messages.parse(
+      {
+        model: AI_CATEGORISE_MODEL,
+        max_tokens: maxTokensFor(batch.length),
+        thinking: { type: "disabled" }, // classification doesn't need thinking
+        system: CATEGORISE_SYSTEM_PROMPT,
+        // The merchants travel as JSON data, never mixed into the instructions
+        messages: [{ role: "user", content: JSON.stringify(batch) }],
+        output_config: { format: zodOutputFormat(ResponseSchema) },
+      },
+      // No retries during an import: a slow or failed batch just falls back
+      { timeout: AI_TIMEOUT_MS, maxRetries: 0 },
+    );
+
+    const parsed = response.parsed_output; // already checked against the schema
+    if (!parsed) return new Map(); // refused, cut off or unusable: all stay null
+
+    return checkAnswers(batch, parsed.answers);
+  } catch (error) {
+    // Only the error's name: messages could echo merchant names or output
+    console.error(
+      "[ai] categorise batch failed:",
+      error instanceof Error ? error.name : "unknown error",
+    );
+    return new Map();
+  }
+}
