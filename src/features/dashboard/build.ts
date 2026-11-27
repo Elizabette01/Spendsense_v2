@@ -16,7 +16,8 @@ import {
   type MoneyRow,
 } from "@/lib/finance/months";
 import {
-  detectRecurring,
+  activeRecurring,
+  MIN_MONTHS,
   mostExpensive,
   nextDue,
   type RecurringPayment,
@@ -50,7 +51,7 @@ export type DashboardData =
       incomeVsExpenses: MonthBars[];
       spendingBreakdown: { totalMinor: number; slices: BreakdownSlice[] };
       recurring: {
-        /** Recurring needs two months of data to mean anything. */
+        /** Recurring needs MIN_MONTHS (3) months of data to mean anything. */
         enoughData: boolean;
         nextDue: RecurringPayment[];
         mostExpensive: RecurringPayment[];
@@ -120,7 +121,11 @@ export function buildTopMerchants(
     .slice(0, TOP_MERCHANTS);
 }
 
-export function buildDashboard(rows: readonly DashboardRow[]): DashboardData {
+export function buildDashboard(
+  rows: readonly DashboardRow[],
+  /** Merchant keys the user marked "Not recurring". */
+  dismissedKeys: ReadonlySet<string> = new Set(),
+): DashboardData {
   const month = currentMonth(rows);
   if (month === null) return { hasData: false };
 
@@ -138,10 +143,9 @@ export function buildDashboard(rows: readonly DashboardRow[]): DashboardData {
     return { key, incomeMinor: totals.incomeMinor, expensesMinor: totals.expensesMinor };
   });
 
-  // Upcoming only: a payment already overdue by the latest transaction has
-  // probably stopped, so it isn't shown as recurring any more
-  const latest = Math.max(...rows.map((row) => row.date.getTime()));
-  const recurring = detectRecurring(rows).filter((payment) => payment.nextDue.getTime() > latest);
+  // The same rule as /recurring: detected, minus dismissed merchants, and
+  // only payments still upcoming
+  const recurring = activeRecurring(rows, dismissedKeys);
   const monthsWithData = new Set(rows.map((row) => monthKey(row.date))).size;
 
   return {
@@ -162,7 +166,7 @@ export function buildDashboard(rows: readonly DashboardRow[]): DashboardData {
     incomeVsExpenses,
     spendingBreakdown: buildBreakdown(rows, month),
     recurring: {
-      enoughData: monthsWithData >= 2,
+      enoughData: monthsWithData >= MIN_MONTHS,
       nextDue: nextDue(recurring, RECURRING_SHOWN),
       mostExpensive: mostExpensive(recurring, RECURRING_SHOWN),
       count: recurring.length,

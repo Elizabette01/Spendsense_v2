@@ -2,7 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 
-import { db } from "@/lib/db";
+import { loadDismissedKeys, loadUserTransactions } from "@/lib/recurring/data";
 import { getSession } from "@/lib/session";
 
 import { buildDashboard, type DashboardData } from "./build";
@@ -17,28 +17,12 @@ export const getDashboardData = cache(async (): Promise<DashboardData> => {
   const userId = session?.user?.id;
   if (!userId) return { hasData: false };
 
-  const transactions = await db.transaction.findMany({
-    where: { userId },
-    select: {
-      date: true,
-      amountMinor: true,
-      merchant: true,
-      description: true,
-      categoryId: true,
-      category: { select: { name: true, type: true } },
-    },
-  });
-
-  return buildDashboard(
-    transactions.map((transaction) => ({
-      date: transaction.date,
-      amountMinor: transaction.amountMinor,
-      merchant: transaction.merchant ?? transaction.description,
-      categoryId: transaction.categoryId,
-      categoryName: transaction.category?.name ?? null,
-      categoryType: transaction.category?.type ?? null,
-    })),
-  );
+  // The same load /recurring uses, so both show the same recurring payments
+  const [rows, dismissedKeys] = await Promise.all([
+    loadUserTransactions(userId),
+    loadDismissedKeys(userId),
+  ]);
+  return buildDashboard(rows, dismissedKeys);
 });
 
 /** The signed-in user's first name, for the greeting. */

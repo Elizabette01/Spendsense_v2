@@ -100,6 +100,24 @@ describe("recurring on the dashboard", () => {
     expect(data.recurring.count).toBe(1);
     expect(data.recurring.monthlyTotalMinor).toBe(1099);
   });
+
+  it("leaves out merchants the user marked Not recurring, like /recurring does", () => {
+    const rows = [
+      ...monthly("Netflix", ["2026-08-12", "2026-09-12", "2026-10-12"], -1099),
+      ...monthly("PureGym", ["2026-08-01", "2026-09-01", "2026-10-01"], -2999),
+    ];
+    const data = buildDashboard(rows, new Set(["netflix"]));
+    if (!data.hasData) throw new Error("expected data");
+    expect(data.recurring.nextDue.map((p) => p.merchant)).toEqual(["PureGym"]);
+    expect(data.recurring.count).toBe(1);
+  });
+
+  it("needs three months of data before recurring means anything", () => {
+    const twoMonths = monthly("Netflix", ["2026-09-12", "2026-10-12"], -1099);
+    const data = buildDashboard(twoMonths);
+    if (!data.hasData) throw new Error("expected data");
+    expect(data.recurring.enoughData).toBe(false);
+  });
 });
 
 describe("buildBreakdown", () => {
