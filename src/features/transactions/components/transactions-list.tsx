@@ -7,12 +7,17 @@ import { filtersHref, pageList, type TransactionFilters } from "../filters";
 import {
   getCategories,
   getNeedsReviewCount,
+  getReviewMerchants,
   getTransactionCount,
   getTransactionMonths,
   getTransactions,
+  MAX_REVIEW_MERCHANTS,
   TRANSACTIONS_PER_PAGE,
+  type CategoryOption,
+  type ReviewMerchant,
   type TransactionListItem,
 } from "../queries";
+import { AiCategoriseButton } from "./ai-categorise-button";
 import { CategoryControl } from "./category-control";
 import { TransactionsToolbar } from "./transactions-toolbar";
 
@@ -71,12 +76,14 @@ function Amount({ amountMinor, className = "" }: { amountMinor: number; classNam
 
 /** Header pills, filters, transactions and pagination. Reads the session: render inside <Suspense>. */
 export async function TransactionsList({ filters }: { filters: TransactionFilters }) {
-  const [result, categories, months, total, needsReview] = await Promise.all([
+  const reviewView = filters.category === "review";
+  const [result, categories, months, total, needsReview, reviewMerchants] = await Promise.all([
     getTransactions(filters),
     getCategories(),
     getTransactionMonths(),
     getTransactionCount(),
     getNeedsReviewCount(),
+    reviewView ? getReviewMerchants(filters) : Promise.resolve([]),
   ]);
   const filtered = Boolean(filters.search || filters.category || filters.month || filters.type);
   const first = (result.page - 1) * TRANSACTIONS_PER_PAGE + 1;
@@ -107,7 +114,9 @@ export async function TransactionsList({ filters }: { filters: TransactionFilter
         months={months}
       />
 
-      {result.totalCount === 0 ? (
+      {reviewView ? (
+        <ReviewView merchants={reviewMerchants} categories={categories} needsReview={needsReview} />
+      ) : result.totalCount === 0 ? (
         <EmptyState filtered={filtered} hasAny={total > 0} />
       ) : (
         <>
@@ -139,6 +148,8 @@ export async function TransactionsList({ filters }: { filters: TransactionFilter
                       merchant={merchant}
                       category={transaction.category}
                       categories={categories}
+                      categorisedBy={transaction.categorisedBy}
+                      lowConfidence={transaction.categoryLowConfidence}
                     />
                     <span className="text-label text-foreground-muted">{formatDay(transaction.date)}</span>
                   </div>
@@ -184,6 +195,8 @@ export async function TransactionsList({ filters }: { filters: TransactionFilter
                         merchant={merchant}
                         category={transaction.category}
                         categories={categories}
+                        categorisedBy={transaction.categorisedBy}
+                        lowConfidence={transaction.categoryLowConfidence}
                       />
                     </td>
                     <td className={`${cell} px-4 text-body whitespace-nowrap text-foreground-muted`}>
@@ -277,6 +290,86 @@ function Pagination({
         </ul>
       )}
     </nav>
+  );
+}
+
+/**
+ * "Needs review", grouped (no design image): one row per merchant and
+ * direction. Choosing a category fixes all of that merchant's transactions
+ * and remembers it for future imports.
+ */
+function ReviewView({
+  merchants,
+  categories,
+  needsReview,
+}: {
+  merchants: ReviewMerchant[];
+  categories: CategoryOption[];
+  needsReview: number;
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      <AiCategoriseButton hasReview={needsReview > 0} />
+
+      {merchants.length === 0 ? (
+        <div className="flex flex-col items-start gap-3 rounded-card bg-card p-6 shadow-card">
+          <p className="text-card-title text-heading">Nothing to review</p>
+          <p className="text-body text-foreground-secondary">
+            {needsReview > 0
+              ? "No merchants match these filters."
+              : "Every transaction has a category."}
+          </p>
+          <ButtonLink href="/transactions" variant="outline">
+            See all transactions
+          </ButtonLink>
+        </div>
+      ) : (
+        <>
+          <ul aria-label="Merchants that need a category" className="flex flex-col gap-2">
+            {merchants.map((group) => (
+              <li
+                key={group.key}
+                className="flex flex-col gap-3 rounded-card border border-border bg-card p-4 sm:flex-row sm:items-center"
+              >
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <span
+                    aria-hidden="true"
+                    className="flex size-9 shrink-0 items-center justify-center rounded-full bg-coral-light text-body font-semibold text-coral-strong"
+                  >
+                    ?
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-body font-semibold break-words text-heading">{group.merchant}</p>
+                    <p className="text-label text-foreground-muted">
+                      {group.direction === "IN" ? "Money in" : "Money out"} ·{" "}
+                      {plural(group.transactionCount, "transaction")}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3 pl-12 sm:justify-end sm:pl-0">
+                  <span className="text-body">
+                    <span className="sr-only">Total </span>
+                    <Amount amountMinor={group.totalMinor} />
+                  </span>
+                  <CategoryControl
+                    transactionId={group.transactionId}
+                    merchant={group.merchant}
+                    category={null}
+                    categories={categories}
+                    merchantTransactionCount={group.transactionCount}
+                  />
+                </div>
+              </li>
+            ))}
+          </ul>
+          {merchants.length === MAX_REVIEW_MERCHANTS && (
+            <p className="text-label text-foreground-muted">
+              Showing the first {MAX_REVIEW_MERCHANTS} merchants. More appear as you go.
+            </p>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
