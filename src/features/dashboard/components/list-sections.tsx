@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { formatMoney } from "@/lib/format";
 import type { RecurringPayment } from "@/lib/recurring/detect";
 
@@ -41,7 +43,7 @@ export function RecurringSection({
     <SectionCard title="Recurring payments" subtitle="Upcoming and top costs" className="lg:col-span-2">
       {!enoughData ? (
         <p className="text-body text-foreground-secondary">
-          Not enough data yet. Recurring payments show up once you have at least two months of
+          Not enough data yet. Recurring payments show up once you have at least three months of
           transactions.
         </p>
       ) : nextDue.length === 0 ? (
@@ -53,7 +55,7 @@ export function RecurringSection({
             <ul className="flex flex-col gap-4">
               {nextDue.map((payment) => (
                 <PaymentRow
-                  key={payment.merchant}
+                  key={payment.merchantKey}
                   payment={payment}
                   detail={`Due ${DUE.format(payment.nextDue)}`}
                 />
@@ -65,7 +67,7 @@ export function RecurringSection({
             <ul className="flex flex-col gap-4">
               {mostExpensive.map((payment) => (
                 <PaymentRow
-                  key={payment.merchant}
+                  key={payment.merchantKey}
                   payment={payment}
                   detail={`Usually on the ${ordinal(payment.dayOfMonth)}`}
                 />
@@ -74,6 +76,12 @@ export function RecurringSection({
           </div>
         </div>
       )}
+      <Link
+        href="/recurring"
+        className="self-start rounded-control text-body font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      >
+        See all<span className="sr-only"> recurring payments</span> <span aria-hidden="true">→</span>
+      </Link>
     </SectionCard>
   );
 }

@@ -6,6 +6,7 @@ import {
   formatMoneyAbs,
   formatMonthYear,
   formatPeriod,
+  ordinal,
   plural,
 } from "./format";
 
@@ -50,5 +51,14 @@ describe("plural", () => {
     expect(plural(1, "transaction")).toBe("1 transaction");
     expect(plural(1420, "transaction")).toBe("1,420 transactions");
     expect(plural(0, "row")).toBe("0 rows");
+  });
+});
+
+describe("ordinal", () => {
+  it.each([
+    [1, "1st"], [2, "2nd"], [3, "3rd"], [4, "4th"], [11, "11th"], [12, "12th"],
+    [13, "13th"], [21, "21st"], [22, "22nd"], [23, "23rd"], [31, "31st"],
+  ])("%i → %s", (day, expected) => {
+    expect(ordinal(day)).toBe(expected);
   });
 });

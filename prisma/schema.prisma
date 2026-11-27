@@ -139,6 +139,7 @@ model User {
   auditLogsAsTarget AuditLog[]      @relation("AuditTarget")
   authTokens        AuthToken[]
   merchantRules     MerchantRule[]
+  recurringDismissals RecurringDismissal[]
   @@index([deletionScheduledFor])
   
 
@@ -224,6 +225,20 @@ model MerchantRule {
   @@unique([userId, merchantKey, direction])
   @@index([categoryId])
   @@map("merchant_rules")
+}
+
+// "Not recurring": the user says this merchant isn't a recurring payment.
+// Matched by merchant key, the same key detection groups by. Undo deletes it.
+model RecurringDismissal {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  merchantKey String   @map("merchant_key")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, merchantKey])
+  @@map("recurring_dismissals")
 }
 
 model Statement {
