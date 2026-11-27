@@ -13,6 +13,16 @@ export function DoneStep({ result }: { result: ImportResult }) {
     result.issueCount > 0 && `${plural(result.issueCount, "row")} couldn't be read`,
   ].filter(Boolean);
 
+  // Review is per merchant: one fix covers all of a merchant's transactions
+  const reviewMerchants = plural(result.needsReviewMerchantCount, "merchant");
+  const reviewRows = `(${plural(result.needsReviewCount, "transaction")})`;
+  const aiLines = [
+    result.aiCategorisedCount > 0 &&
+      `including ${result.aiCategorisedCount.toLocaleString("en-GB")} suggested by AI`,
+    result.lowConfidenceCount > 0 &&
+      `${plural(result.lowConfidenceCount, "AI guess", "AI guesses")} to check`,
+  ].filter((line): line is string => Boolean(line));
+
   return (
     <Card className="mx-auto flex w-full max-w-170 flex-col gap-6 p-6 sm:p-8">
       <div className="flex flex-col items-center gap-2 text-center">
@@ -30,8 +40,13 @@ export function DoneStep({ result }: { result: ImportResult }) {
 
       <dl className="grid grid-cols-3 divide-x divide-divider border-y border-divider py-4 text-center">
         <Stat label="Transactions" value={result.importedCount} />
-        <Stat label="Categorised" value={result.categorisedCount} />
-        <Stat label="Need review" value={result.needsReviewCount} />
+        <Stat label="Categorised" value={result.categorisedCount} details={aiLines} />
+        <Stat
+          label="Need review"
+          value={result.needsReviewMerchantCount}
+          unit={result.needsReviewMerchantCount === 1 ? "merchant" : "merchants"}
+          details={result.needsReviewCount > 0 ? [reviewRows] : []}
+        />
       </dl>
 
       {extras.length > 0 && (
@@ -43,12 +58,13 @@ export function DoneStep({ result }: { result: ImportResult }) {
           <span aria-hidden="true">⚠</span>
           <div>
             <p className="text-body font-semibold">
-              {plural(result.needsReviewCount, "transaction")}{" "}
-              {result.needsReviewCount === 1 ? "needs" : "need"} your review
+              {reviewMerchants} {reviewRows} {result.needsReviewMerchantCount === 1 ? "needs" : "need"}{" "}
+              your review
             </p>
             <p className="text-label">
-              {result.needsReviewCount === 1 ? "It" : "These"} couldn&apos;t be categorised
-              automatically. You can choose a category yourself.
+              {result.needsReviewMerchantCount === 1 ? "It" : "These"} couldn&apos;t be categorised
+              automatically. Choose a category once per merchant and it covers all of its
+              transactions.
             </p>
           </div>
         </div>
@@ -66,11 +82,33 @@ export function DoneStep({ result }: { result: ImportResult }) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({
+  label,
+  value,
+  unit,
+  details = [],
+}: {
+  label: string;
+  value: number;
+  /** Shown after the number, e.g. "merchants". */
+  unit?: string;
+  /** Smaller lines under the figure. */
+  details?: string[];
+}) {
   return (
-    <div className="flex flex-col-reverse gap-1 px-2">
-      <dt className="text-label text-foreground-muted">{label}</dt>
-      <dd className="text-stat text-heading">{value.toLocaleString("en-GB")}</dd>
+    <div className="flex flex-col gap-1 px-2">
+      <dt className="order-last text-label text-foreground-muted">{label}</dt>
+      <dd className="flex flex-col items-center gap-0.5">
+        <span className="text-stat text-heading">
+          {value.toLocaleString("en-GB")}
+          {unit && <span className="text-body font-medium text-foreground-secondary"> {unit}</span>}
+        </span>
+        {details.map((line) => (
+          <span key={line} className="text-label text-foreground-muted">
+            {line}
+          </span>
+        ))}
+      </dd>
     </div>
   );
 }
