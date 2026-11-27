@@ -32,10 +32,12 @@ export type SystemCategoryId =
   | "sys_cash"
   | "sys_expenses"
   | "sys_general"
+  | "sys_people_out"
   | "sys_salary"
   | "sys_benefits"
   | "sys_refunds"
   | "sys_other_income"
+  | "sys_people_in"
   | "sys_transfers"
   | "sys_savings";
 
@@ -94,6 +96,13 @@ export const RULES: readonly Rule[] = [
     "RENT", "LETTINGS", "LETTING", "MORTGAGE", "ESTATE AGENTS", "HOUSING ASSOCIATION",
     "OPENRENT", "SERVICE CHARGE", "GROUND RENT",
   ]),
+  // Amazon Prime in any spelling ("AMZN PRIME", "AMAZON.CO.UK PRIME*AB12"):
+  // a subscription. Must come before the broad "AMAZON" shopping rule below.
+  {
+    categoryId: "sys_subscriptions",
+    direction: "out",
+    pattern: /(?<![A-Z0-9])(?:AMAZON|AMZN)[A-Z0-9.*\s]*?PRIME(?![A-Z])/,
+  },
   rule("sys_subscriptions", "out", [
     "NETFLIX", "SPOTIFY", "DISNEY PLUS", "DISNEYPLUS", "AMAZON PRIME", "PRIME VIDEO",
     "APPLE.COM/BILL", "APPLE.COM", "ITUNES", "ICLOUD", "YOUTUBE PREMIUM", "YOUTUBEPREMIUM",

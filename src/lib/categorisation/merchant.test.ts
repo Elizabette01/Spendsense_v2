@@ -18,6 +18,9 @@ describe("deriveMerchant", () => {
     ["SQ *CORNER CAFE", "Corner Cafe"],
     ["SUMUP *MARKET STALL", "Market Stall"],
     ["PAYPAL *EBAY", "Ebay"],
+    ["PAYPAL *EXAMPLE SHOP", "Example Shop"],
+    ["PAYPAL*EXAMPLESHOP", "Exampleshop"],
+    ["CARD PAYMENT TO PAYPAL *EXAMPLE SHOP", "Example Shop"],
     ["CARD PAYMENT TO SQ *CORNER CAFE", "Corner Cafe"],
     // Reference after a star, domains
     ["AMAZON.CO.UK*MK1AB", "Amazon"],
