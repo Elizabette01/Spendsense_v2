@@ -1,6 +1,8 @@
 import "server-only";
 
 import type { CategorisedBy, CategoryType, Prisma } from "@/generated/prisma/client";
+import { directionOf, type RuleDirection } from "@/lib/categorisation/categorise";
+import { deriveMerchant, merchantKey } from "@/lib/categorisation/merchant";
 import { monthKey, monthStart, shiftMonth } from "@/lib/finance/months";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/session";
@@ -16,7 +18,22 @@ export type TransactionListItem = {
   merchant: string | null;
   amountMinor: number;
   categorisedBy: CategorisedBy | null;
+  /** An AI guess the user should check ("AI guess, check it's right"). */
+  categoryLowConfidence: boolean;
   category: { id: string; name: string; type: CategoryType } | null;
+};
+
+/** One row of the grouped "Needs review" view: a merchant in one direction. */
+export type ReviewMerchant = {
+  /** `merchantKey|direction`: unique per row of the list. */
+  key: string;
+  merchant: string;
+  direction: RuleDirection;
+  transactionCount: number;
+  /** Sum of the amounts, in pence (negative for money out). */
+  totalMinor: number;
+  /** Any one of its transactions: the category control saves through it, merchant-wide. */
+  transactionId: string;
 };
 
 export type TransactionPage = {
@@ -100,6 +117,7 @@ export async function getTransactions({
       merchant: true,
       amountMinor: true,
       categorisedBy: true,
+      categoryLowConfidence: true,
       category: { select: { id: true, name: true, type: true } },
     },
   });
@@ -122,6 +140,58 @@ export async function getCategories(): Promise<CategoryOption[]> {
     ...category,
     isOwn: owner !== null,
   }));
+}
+
+/** Most groups shown in the review view (the rest appear once these are done). */
+export const MAX_REVIEW_MERCHANTS = 200;
+
+/**
+ * The "Needs review" view, grouped: one entry per merchant and direction
+ * (Amazon money in and Amazon money out are separate), most transactions
+ * first. Respects the search, month and in/out filters.
+ */
+export async function getReviewMerchants(
+  filters: Partial<TransactionFilters> = {},
+): Promise<ReviewMerchant[]> {
+  const userId = await currentUserId();
+  if (!userId) return [];
+
+  const rows = await db.transaction.findMany({
+    where: whereFor(userId, { ...filters, category: "review" }),
+    orderBy: [{ date: "desc" }, { id: "desc" }],
+    select: { id: true, merchant: true, description: true, amountMinor: true },
+  });
+
+  const groups = new Map<string, ReviewMerchant>();
+  for (const row of rows) {
+    // Grouped by key, the same way rules match, so "TESCO" and "Tesco" are one entry
+    const merchant = row.merchant ?? deriveMerchant(row.description);
+    const direction = directionOf(row.amountMinor);
+    const key = `${merchantKey(merchant)}|${direction}`;
+    const group = groups.get(key);
+    if (group) {
+      group.transactionCount += 1;
+      group.totalMinor += row.amountMinor;
+    } else {
+      groups.set(key, {
+        key,
+        merchant,
+        direction,
+        transactionCount: 1,
+        totalMinor: row.amountMinor,
+        transactionId: row.id,
+      });
+    }
+  }
+
+  return [...groups.values()]
+    .sort(
+      (a, b) =>
+        b.transactionCount - a.transactionCount ||
+        Math.abs(b.totalMinor) - Math.abs(a.totalMinor) ||
+        a.merchant.localeCompare(b.merchant),
+    )
+    .slice(0, MAX_REVIEW_MERCHANTS);
 }
 
 /** How many of the user's transactions have no category yet. */
