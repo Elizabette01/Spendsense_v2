@@ -69,3 +69,12 @@ export function formatPeriod(
 export function plural(count: number, one: string, many = `${one}s`): string {
   return `${count.toLocaleString("en-GB")} ${count === 1 ? one : many}`;
 }
+
+/** 1 → "1st", 2 → "2nd", 11 → "11th", 23 → "23rd". */
+export function ordinal(day: number): string {
+  const lastTwo = day % 100;
+  const last = day % 10;
+  const suffix =
+    lastTwo >= 11 && lastTwo <= 13 ? "th" : last === 1 ? "st" : last === 2 ? "nd" : last === 3 ? "rd" : "th";
+  return `${day}${suffix}`;
+}
